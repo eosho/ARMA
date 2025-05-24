@@ -1,1 +1,0 @@
-in template validation, we need something additional. We need to verify resource group exists and that subscription is valid and store them in different states, if rg doesn't exist, set state rg_exists = false or true if it exists and subscription_valid true or false.
