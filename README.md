@@ -21,6 +21,7 @@ This project implements a **modular, production-grade, multi-agent workflow** fo
 - [Extending the System](#extending-the-system)
 - [File Structure](#file-structure)
 - [Appendix: Example Conversation Flow](#appendix-example-conversation-flow)
+- [Work In Progress (WIP)](#work-in-progress-wip)
 
 ---
 
@@ -267,3 +268,33 @@ flowchart TD
 ```
 
 **All of the above messages are logged in the `messages` list and displayed in the UI.**
+
+---
+
+## Work In Progress (WIP)
+
+### 1. Loading Templates from a Vector Store
+
+Currently, ARM templates are loaded from the local file system based on the extracted `resource_type` (e.g., `quickstarts/microsoft.storage/storageaccounts.json`).
+
+**Planned Improvement:**
+- Store ARM templates in a vector store (e.g., FAISS, ChromaDB) with metadata including resource type, description, and tags.
+- On intent extraction, use the resource type to query the vector store for the most relevant template, enabling fuzzy matching, semantic search, and easier extensibility.
+- This will allow for more flexible template retrieval, support for similar resource types, and easier management of a large template library.
+
+**Intended Approach:**
+- Index all templates in the vector store at startup or via a management script.
+- On user request, extract the resource type and use it as a query to the vector store.
+- Retrieve the best-matching template and load it into the workflow state for validation and deployment.
+
+### 2. Proper Logging
+
+Currently, logging is handled via Python's built-in logging module and messages are appended to the in-memory state for UI display.
+
+**Planned Improvement:**
+- Implement structured logging (e.g., JSON logs) for all agent and system actions.
+- Support persistent logging to disk, cloud storage, or external logging services (e.g., Azure Monitor, ELK, Datadog).
+- Include correlation IDs, timestamps, and workflow/graph context in all logs for traceability.
+- Optionally, expose logs via an API or UI for audit and debugging purposes.
+
+---

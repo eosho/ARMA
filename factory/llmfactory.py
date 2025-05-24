@@ -19,10 +19,10 @@ def get_llm():
     elif provider == "azure":
         api_key = os.environ.get("AZURE_OPENAI_API_KEY")
         endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
-        deployment = os.environ.get("AZURE_OPENAI_REASONING_DEPLOYMENT")
+        deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
         api_version = os.environ.get("AZURE_OPENAI_API_VERSION")
         if not all([api_key, endpoint, deployment, api_version]):
-            raise ValueError("AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_REASONING_DEPLOYMENT, and AZURE_OPENAI_API_VERSION must be set for Azure provider.")
+            raise ValueError("AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT, and AZURE_OPENAI_API_VERSION must be set for Azure provider.")
         return AzureChatOpenAI(
             azure_deployment=deployment,
             api_version=api_version,
