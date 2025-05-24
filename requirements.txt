@@ -1,0 +1,12 @@
+chainlit
+langchain
+langchain-openai
+langchain-core==0.3.60
+faiss-cpu
+dotenv
+langgraph
+langgraph-cli[inmem]
+langchain-community
+langchain-chroma
+azure-identity
+azure-mgmt-resource
