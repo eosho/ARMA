@@ -14,6 +14,7 @@ This project implements a **modular, production-grade, multi-agent workflow** fo
   - [Intent Detection Subgraph](#intent-detection-subgraph)
   - [Template Validation Subgraph](#template-validation-subgraph)
   - [Deployment Subgraph](#deployment-subgraph)
+  - [Resource Action Agent](#resource-action-agent)
 - [Main Graph Wiring](#main-graph-wiring)
 - [Message Logging & UI Integration](#message-logging--ui-integration)
 - [ARM Template Storage](#arm-template-storage)
@@ -69,7 +70,9 @@ Extracts the user's intent, Azure resource type, and all relevant fields from th
 flowchart TD
     START([START]) --> intent_extraction
     intent_extraction --> scope_fields_check
-    scope_fields_check --> template_fetch
+    scope_fields_check --> decision{intent}
+    decision -- create/update --> template_fetch
+    decision -- get/list/delete --> END([END])
     template_fetch --> scope_determination
     scope_determination --> END([END])
 ```
@@ -101,9 +104,10 @@ flowchart TD
     START([START]) --> check_subscription
     check_subscription --> check_resource_group
     check_resource_group --> validate
-    validate -- missing/invalid --> prompt_for_missing
-    validate -- valid --> END([END])
-    prompt_for_missing --> END
+    validate --> decision{parameters valid?}
+    decision -- yes --> END([END])
+    decision -- no --> prompt_for_missing
+    prompt_for_missing --> END([END])
 ```
 
 **Key Features:**
@@ -132,7 +136,7 @@ flowchart TD
     decision -- resourceGroup --> resource_group_deployment
     decision -- subscription --> subscription_deployment
     resource_group_deployment --> END([END])
-    subscription_deployment --> END
+    subscription_deployment --> END([END])
 ```
 
 **Key Features:**
@@ -143,6 +147,39 @@ flowchart TD
 
 ---
 
+### 4. Resource Action Agent (`agents/resource_action_agent.py`)
+
+**Purpose:**  
+Handles Azure resource management actions such as get, list, and delete for resources, using the Azure SDK.
+
+**Nodes:**
+
+- `get_resource`: Retrieves details of a specific Azure resource.
+- `list_resources`: Lists resources of a specified type in a resource group.
+- `delete_resource`: Deletes a specified Azure resource.
+
+**Flow:**
+
+```mermaid
+flowchart TD
+    START([START]) --> decision{intent}
+    decision -- get --> get_resource
+    decision -- list --> list_resources
+    decision -- delete --> delete_resource
+    get_resource --> END([END])
+    list_resources --> END([END])
+    delete_resource --> END([END])
+```
+
+**Key Features:**
+
+- Uses Azure SDK for Python for all resource actions.
+- Logs and stores all results in the workflow state in a consistent, JSON-formatted way.
+- Handles missing required fields by interrupting and prompting for user input.
+- Supports extensible intent-based routing for future resource actions.
+
+---
+
 ## Main Graph Wiring (`graph.py`)
 
 The **master graph** orchestrates the full workflow by chaining the subgraphs:
@@ -150,7 +187,11 @@ The **master graph** orchestrates the full workflow by chaining the subgraphs:
 ```mermaid
 flowchart TD
     START([START]) --> intent_detection
-    intent_detection --> template_validation
+    intent_detection --> decision{intent}
+    decision -- get/list/delete --> resource_action
+    decision -- create/update --> template_validation
+    decision -- other --> END([END])
+    resource_action --> END([END])
     template_validation --> deployment
     deployment --> END([END])
 ```
@@ -228,7 +269,8 @@ flowchart TD
 ├── agents/
 │   ├── intent_detection_langgraph.py
 │   ├── template_validation_agent.py
-│   └── deployment_agent.py
+│   ├── deployment_agent.py
+│   └── resource_action_agent.py
 ├── quickstarts/
 │   ├── microsoft.storage/
 │   │   └── storageaccounts.json

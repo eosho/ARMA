@@ -12,6 +12,9 @@ from azure.identity import DefaultAzureCredential
 from azure.mgmt.resource import ResourceManagementClient, SubscriptionClient
 from langgraph.types import interrupt
 from factory.llmfactory import get_llm
+from prompts.prompts import TEMPLATE_VALIDATION_SYSTEM_PROMPT
+
+# logging
 logging.basicConfig(
   level=logging.INFO,
   format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
@@ -22,6 +25,10 @@ logging.getLogger("azure").setLevel(logging.ERROR)
 logger = logging.getLogger(__name__)
 
 load_dotenv()
+
+# deployment name
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+deployment_name = f"ai-validation-{timestamp}"
 
 def check_subscription_exists(subscription_id: str) -> bool:
     """
@@ -106,45 +113,7 @@ def template_validation_node(state: Dict[str, Any]) -> Dict[str, Any]:
             return {**state, "validation_error": "No parameters section in template."}
 
         llm = get_llm()
-        system_prompt = """
-You are an Azure ARM template parameter validator.
-
-Given:
-- The ARM template parameters (as JSON)
-- The provided_fields (as JSON)
-
-Instructions:
-- For each parameter in the template, check if a value is provided in provided_fields (exact key match).
-- You should be able to intelligently map provided_fields key/value pairs to parameter names and parameter value types. E.g. "name" would match "storageAccountName", "vmName", "dbName" etc.
-- If a required parameter is missing, add it to "missing_parameters".
-- If a provided_fields key does not match any parameter, add it to "extra_fields".
-- If a provided value is of the wrong type or not in allowed values, add a message to "validation_error".
-- If all required parameters are present and valid, return a "parameter_file_content" JSON object mapping parameter names to their values (in the format {"parameters": {name: {"value": value}}}).
-- Only return the JSON object, no extra text.
-
-Examples:
-
-Template parameters:
-{"parameters": {"name": {"type": "string"}, "location": {"type": "string", "allowedValues": ["eastus", "westus"]}, "sku": {"type": "string", "defaultValue": "Standard"}}}
-Provided fields:
-{"name": "testsa", "location": "eastus"}
-Output:
-{"parameter_file_content": {"parameters": {"name": {"value": "testsa"}, "location": {"value": "eastus"}}}, "missing_parameters": [], "extra_fields": [], "validation_error": null}
-
-Template parameters:
-{"parameters": {"name": {"type": "string"}, "location": {"type": "string", "allowedValues": ["eastus", "westus"]}, "sku": {"type": "string", "defaultValue": "Standard"}}}
-Provided fields:
-{"location": "centralus"}
-Output:
-{"parameter_file_content": {}, "missing_parameters": ["name"], "extra_fields": [], "validation_error": "location value 'centralus' is not allowed. Allowed values: ['eastus', 'westus']"}
-
-Template parameters:
-{"parameters": {"name": {"type": "string"}, "count": {"type": "int"}}}
-Provided fields:
-{"name": "vm1", "count": "notanint", "foo": "bar"}
-Output:
-{"parameter_file_content": {}, "missing_parameters": [], "extra_fields": ["foo"], "validation_error": "count value 'notanint' is not a valid int."}
-"""
+        system_prompt = TEMPLATE_VALIDATION_SYSTEM_PROMPT
         response = llm.invoke([
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"Template parameters:\n{json.dumps({'parameters': parameters}, indent=2)}"},
@@ -196,21 +165,78 @@ def prompt_for_missing_node(state: Dict[str, Any]) -> Dict[str, Any]:
     logger.info(f"Interrupting for user input: {user_prompt_message}")
     return interrupt(user_prompt_message)
 
+def arm_template_deployment_validation_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Validates the ARM template and parameters against Azure using the Azure SDK (without deploying).
+    Stores the validation result and any errors in the state.
+    """
+    template = state.get("template")
+    parameters = state.get("parameter_file_content", {}).get("parameters", {})
+    resource_group = state.get("resource_group_name")
+    subscription_id = state.get("subscription_id")
+    location = state.get("location", "eastus")
+    scope = state.get("scope", "resourceGroup")
+    credential = DefaultAzureCredential()
+    client = ResourceManagementClient(credential, subscription_id)
+    try:
+        if isinstance(template, str):
+            template = json.loads(template)
+        if scope == "resourceGroup":
+            if not resource_group:
+                return {**state, "arm_validation_error": "No resource group specified for validation."}
+            poller = client.deployments.begin_validate(
+                resource_group,
+                deployment_name,
+                {
+                    "properties": {
+                        "mode": "Incremental",
+                        "template": template,
+                        "parameters": parameters
+                    }
+                }
+            )
+        else:
+            poller = client.deployments.begin_validate_at_subscription_scope(
+                deployment_name,
+                {
+                    "location": location,
+                    "properties": {
+                        "mode": "Incremental",
+                        "template": template,
+                        "parameters": parameters
+                    }
+                }
+            )
+        result = poller.result()
+        state["validation_result"] = result.as_dict() if hasattr(result, "as_dict") else result
+        state["validation_error"] = None
+        state["validation_status"] = "success"
+        logger.info("ARM template deployment validation succeeded.")
+    except Exception as e:
+        logger.error(f"ARM template deployment validation failed: {e}")
+        state["validation_result"] = None
+        state["validation_error"] = str(e)
+        state["validation_status"] = "failed"
+    return state
+
 def build_template_validation_graph():
     graph = StateGraph(MasterState)
     graph.add_node("check_subscription", check_subscription_node)
     graph.add_node("check_resource_group", check_resource_group_node)
     graph.add_node("validate", template_validation_node)
+    graph.add_node("arm_validate", arm_template_deployment_validation_node)
     graph.add_node("prompt_for_missing", prompt_for_missing_node)
 
     # Edges
     graph.add_edge(START, "check_subscription")
     graph.add_edge("check_subscription", "check_resource_group")
     graph.add_edge("check_resource_group", "validate")
+    # Only run ARM validation if no missing/invalid parameters
     graph.add_conditional_edges(
         "validate",
-        lambda state: "prompt_for_missing" if state.get("missing_parameters") or state.get("type_errors") else END,
-        {"prompt_for_missing": "prompt_for_missing", END: END}
+        lambda state: "prompt_for_missing" if state.get("missing_parameters") or state.get("type_errors") or state.get("validation_error") else "arm_validate",
+        {"prompt_for_missing": "prompt_for_missing", "arm_validate": "arm_validate"}
     )
+    graph.add_edge("arm_validate", END)
     graph.add_edge("prompt_for_missing", END)
     return graph

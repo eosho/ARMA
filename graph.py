@@ -11,6 +11,7 @@ from state_schemas import MasterState
 from agents.deployment_agent import build_deployment_graph
 from langchain.storage import InMemoryStore
 from langgraph.checkpoint.memory import InMemorySaver
+from agents.resource_action_agent import build_resource_action_graph
 
 # configure logging
 logging.basicConfig(
@@ -29,17 +30,38 @@ graph = StateGraph(MasterState)
 intent_detection_graph = build_intent_detection_graph().compile()
 template_validation_graph = build_template_validation_graph().compile()
 deployment_graph = build_deployment_graph().compile()
+resource_action_graph = build_resource_action_graph().compile()
 
 # Add subgraphs as nodes
-graph.add_node("intent_detection", intent_detection_graph)
-graph.add_node("template_validation", template_validation_graph)
-graph.add_node("deployment", deployment_graph)
+graph.add_node("intent_detection_agent", intent_detection_graph)
+graph.add_node("template_validation_agent", template_validation_graph)
+graph.add_node("deployment_agent", deployment_graph)
+graph.add_node("resource_action_agent", resource_action_graph)
 
 # Add edges
-graph.add_edge(START, "intent_detection")
-graph.add_edge("intent_detection", "template_validation")
-graph.add_edge("template_validation", "deployment")
-graph.add_edge("deployment", END)
+graph.add_edge(START, "intent_detection_agent")
+
+# Route based on intent after intent_detection
+def route_after_intent_detection(state):
+    intent = state.get("intent")
+    if intent in ("create", "update"):
+        return "template_validation_agent"
+    elif intent in ("delete", "get", "list"):
+        return "resource_action_agent"
+    else:
+        return END
+graph.add_conditional_edges(
+    "intent_detection_agent",
+    route_after_intent_detection,
+    {
+        "template_validation_agent": "template_validation_agent",
+        "resource_action_agent": "resource_action_agent",
+        END: END
+    }
+)
+graph.add_edge("template_validation_agent", "deployment_agent")
+graph.add_edge("deployment_agent", END)
+graph.add_edge("resource_action_agent", END)
 
 compiled_graph = graph.compile(store=store, checkpointer=checkpointer)
 
@@ -56,13 +78,13 @@ def invoke_graph(input_dict, config):
     return compiled_graph.invoke({"messages": user_messages}, config=config)
 
 
-
 thread_config = {"configurable": {"thread_id": str(uuid.uuid4())}}
 inputs = [
     # 1st round of conversation,
     {
         "messages": [
-            {"role": "user", "content": "create a storage account with the following values, name: eoaiteststorg01, rg: myrg, subscription: e98a7bdd-1e97-452c-939c-4edf569d31f6 and region eastus"}
+            # {"role": "user", "content": "create a storage account with the following values, name: eoaiteststorg01, rg: myrg, subscription: e98a7bdd-1e97-452c-939c-4edf569d31f6 and region eastus"}
+            {"role": "user", "content": "delete storage account with the following values, name: eoaiteststorg01, rg: myrg, subscription: e98a7bdd-1e97-452c-939c-4edf569d31f6"}
         ]
     }
 ]
