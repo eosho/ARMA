@@ -4,7 +4,7 @@ State schemas for the master graph.
 
 from typing import TypedDict, Optional, Literal, Annotated
 from pydantic import Field
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
 from langgraph.graph import MessagesState
 
@@ -12,7 +12,7 @@ class MasterState(MessagesState):
     """
     State schema for the master graph.
     """
-    messages: Annotated[list[HumanMessage, AIMessage], add_messages]
+    messages: Annotated[list[AnyMessage], add_messages]
     prompt: str
     intent: Literal["create", "delete", "update", "get", "list"]
     tenant_id: str = Field(default="fdpo.onmicrosoft.com")
