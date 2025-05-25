@@ -232,13 +232,23 @@ flowchart TD
    ```
 
 2. **Set up environment variables:**
-   - `AZURE_OPENAI_API_KEY`
-   - `AZURE_OPENAI_ENDPOINT`
-   - `LLM_PROVIDER` (e.g., `openai` or `azure`)
-   - `AZURE_CLIENT_ID`
-   - `AZURE_CLIENT_SECRET`
-   - `AZURE_TENANT_ID`
-   - (Optional) `TEMPLATE_VECTORSTORE_PATH`
+    ```
+    # Your AI Foundry project chat model
+    AZURE_OPENAI_ENDPOINT=
+    AZURE_OPENAI_DEPLOYMENT=gpt-4o
+    AZURE_OPENAI_API_VERSION=2024-12-01-preview
+
+    LANGCHAIN_TRACE_V2=False
+
+    LANGSMITH_TRACING=true
+    LANGSMITH_API_KEY=
+    LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+
+    # Azure DefaultCredentials
+    AZURE_CLIENT_ID=
+    AZURE_TENANT_ID=
+    AZURE_CLIENT_SECRET=
+    ```
 
 3. **Run the Streamlit app:**
    ```
