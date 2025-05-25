@@ -1,3 +1,8 @@
+"""
+This agent is responsible for deploying the ARM template to Azure.
+It can deploy to a resource group or a subscription.
+"""
+
 import os
 import json
 import logging
@@ -6,7 +11,7 @@ from azure.identity import DefaultAzureCredential
 from azure.mgmt.resource import ResourceManagementClient
 from azure.mgmt.resource.resources.models import DeploymentMode
 from langgraph.graph import StateGraph, START, END
-from state_schemas import MasterState
+from state import MasterState
 from datetime import datetime
 
 logging.basicConfig(
@@ -20,6 +25,8 @@ logger = logging.getLogger(__name__)
 today = datetime.now().strftime("%m-%d-%Y")
 deployment_name = f"ai-deployment-{today}"
 
+# --- Helper Functions ---
+
 def ensure_template_dict(template):
     if isinstance(template, str):
         try:
@@ -29,9 +36,10 @@ def ensure_template_dict(template):
             raise ValueError("Template is not valid JSON")
     return template
 
-# resource group deployment
+# --- Resource Group Deployment ---
 def resource_group_deployment_node(state: Dict[str, Any]) -> Dict[str, Any]:
     state["deployment_status"] = "pending"
+    logger.info(f"Resource group deployment started")
     try:
         template = ensure_template_dict(state.get("template"))
     except ValueError as e:
@@ -39,12 +47,14 @@ def resource_group_deployment_node(state: Dict[str, Any]) -> Dict[str, Any]:
         state["deployment_status"] = "failed"
         logger.error(f"deployment_error: {state['deployment_error']}")
         return state
+    
     parameters = state.get("parameter_file_content", {}).get("parameters", {})
     resource_group = state.get("resource_group_name")
     subscription_id = state.get("subscription_id")
     location = state.get("location", "eastus")  # fallback location
     credential = DefaultAzureCredential()
     client = ResourceManagementClient(credential, subscription_id)
+    
     # Check and create resource group if needed
     resource_group_exists = state.get("resource_group_exists", False)
     if not resource_group_exists:
@@ -85,9 +95,10 @@ def resource_group_deployment_node(state: Dict[str, Any]) -> Dict[str, Any]:
         logger.error(f"deployment_error: {state['deployment_error']}")
     return state
 
-# subscription deployment
+# --- Subscription Deployment ---
 def subscription_deployment_node(state: Dict[str, Any]) -> Dict[str, Any]:
     state["deployment_status"] = "pending"
+    logger.info(f"Subscription deployment started")
     try:
         template = ensure_template_dict(state.get("template"))
     except ValueError as e:
@@ -95,11 +106,13 @@ def subscription_deployment_node(state: Dict[str, Any]) -> Dict[str, Any]:
         state["deployment_status"] = "failed"
         logger.error(f"deployment_error: {state['deployment_error']}")
         return state
+    
     parameters = state.get("parameter_file_content", {}).get("parameters", {})
     subscription_id = state.get("subscription_id")
     location = state.get("location", "eastus")  # required for subscription deployments
     credential = DefaultAzureCredential()
     client = ResourceManagementClient(credential, subscription_id)
+    
     try:
         deployment_poller = client.deployments.begin_create_or_update_at_subscription_scope(
             deployment_name,
@@ -124,6 +137,7 @@ def subscription_deployment_node(state: Dict[str, Any]) -> Dict[str, Any]:
         logger.error(f"deployment_error: {state['deployment_error']}")
     return state
 
+# --- Graph ---
 def build_deployment_graph():
     graph = StateGraph(MasterState)
     graph.add_node("resource_group_deployment", resource_group_deployment_node)
@@ -139,4 +153,4 @@ def build_deployment_graph():
     )
     graph.add_edge("resource_group_deployment", END)
     graph.add_edge("subscription_deployment", END)
-    return graph
+    return graph.compile()

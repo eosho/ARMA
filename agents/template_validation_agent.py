@@ -1,3 +1,9 @@
+"""
+This agent is responsible for validating the ARM template and parameters against Azure.
+It checks if the subscription and resource group exist, validates the parameters against the template,
+and prompts the user for missing parameters if any are found.
+"""
+
 import json
 import logging
 import os
@@ -5,7 +11,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 import uuid
 from langgraph.graph import StateGraph, START, END
-from state_schemas import MasterState
+from state import MasterState
 from langchain_openai import AzureChatOpenAI
 from dotenv import load_dotenv
 from azure.identity import DefaultAzureCredential
@@ -30,6 +36,9 @@ load_dotenv()
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 deployment_name = f"ai-validation-{timestamp}"
 
+# --- Helper Functions ---
+
+# --- Subscription Check ---
 def check_subscription_exists(subscription_id: str) -> bool:
     """
     Returns True if the subscription exists and is enabled, False otherwise.
@@ -46,6 +55,7 @@ def check_subscription_exists(subscription_id: str) -> bool:
         logger.error(f"Failed to check subscription: {e}")
         return False
 
+# --- Resource Group Check ---
 def check_resource_group_exists(subscription_id: str, resource_group_name: str) -> bool:
     """
     Returns True if the resource group exists in the given subscription, False otherwise.
@@ -61,11 +71,13 @@ def check_resource_group_exists(subscription_id: str, resource_group_name: str) 
         logger.error(f"Failed to check resource group: {e}")
         return False
 
+# --- Node 1: Subscription Check ---
 def check_subscription_node(state: Dict[str, Any]) -> Dict[str, Any]:
     subscription_id = state.get("subscription_id")
     exists = check_subscription_exists(subscription_id) if subscription_id else False
     return {**state, "subscription_exists": exists}
 
+# --- Node 2: Resource Group Check ---
 def check_resource_group_node(state: Dict[str, Any]) -> Dict[str, Any]:
     subscription_id = state.get("subscription_id")
     resource_group_name = state.get("resource_group_name")
@@ -75,29 +87,7 @@ def check_resource_group_node(state: Dict[str, Any]) -> Dict[str, Any]:
     )
     return {**state, "resource_group_exists": exists}
 
-def _is_type_valid(value, expected_type: str) -> bool:
-    """Validate value against ARM template type."""
-    type_map = {
-        "string": str,
-        "int": int,
-        "bool": bool,
-        "array": list,
-        "object": dict,
-        "securestring": str,
-        "secureObject": dict,
-        # Add more ARM types as needed
-    }
-    py_type = type_map.get(expected_type.lower())
-    if py_type is None:
-        return True  # Unknown type, skip validation
-    if expected_type.lower() == "int":
-        try:
-            int(value)
-            return True
-        except Exception:
-            return False
-    return isinstance(value, py_type)
-
+# --- Node 3: Template Validation ---
 def template_validation_node(state: Dict[str, Any]) -> Dict[str, Any]:
     template = state.get("template")
     provided_fields = state.get("provided_fields", {})
@@ -147,6 +137,7 @@ def template_validation_node(state: Dict[str, Any]) -> Dict[str, Any]:
         logger.error(f"Template validation failed: {e}")
         return {**state, "validation_error": str(e)}
 
+# --- Node 4: Prompt for Missing Parameters ---
 def prompt_for_missing_node(state: Dict[str, Any]) -> Dict[str, Any]:
     from langgraph.types import interrupt
     missing = state.get("missing_parameters", [])
@@ -165,6 +156,7 @@ def prompt_for_missing_node(state: Dict[str, Any]) -> Dict[str, Any]:
     logger.info(f"Interrupting for user input: {user_prompt_message}")
     return interrupt(user_prompt_message)
 
+# --- Node 5: ARM Template Deployment Validation ---
 def arm_template_deployment_validation_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     Validates the ARM template and parameters against Azure using the Azure SDK (without deploying).
@@ -219,6 +211,7 @@ def arm_template_deployment_validation_node(state: Dict[str, Any]) -> Dict[str, 
         state["validation_status"] = "failed"
     return state
 
+# --- Graph ---
 def build_template_validation_graph():
     graph = StateGraph(MasterState)
     graph.add_node("check_subscription", check_subscription_node)
@@ -239,4 +232,4 @@ def build_template_validation_graph():
     )
     graph.add_edge("arm_validate", END)
     graph.add_edge("prompt_for_missing", END)
-    return graph
+    return graph.compile()

@@ -1,3 +1,8 @@
+"""
+This agent is responsible for detecting the intent of the user's query and extracting the necessary information.
+It also determines the scope of the query and checks for required scope fields.
+"""
+
 import logging
 from typing import Dict, Any, TypedDict, Optional
 from langgraph.graph import StateGraph, START, END
@@ -8,7 +13,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_openai import AzureOpenAIEmbeddings
 from langchain.schema import Document
 import os
-from state_schemas import MasterState
+from state import MasterState
 from langchain_openai import AzureChatOpenAI
 from dotenv import load_dotenv
 from factory.llmfactory import get_llm
@@ -64,6 +69,7 @@ def template_fetch_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     resource_type = state.get("resource_type")
     logger.info(f"Loading template for resource_type: {resource_type}")
+    
     try:
         if not resource_type:
             raise ValueError("No resource_type provided.")
@@ -138,7 +144,7 @@ def build_intent_detection_graph():
     )
     graph.add_edge("template_fetch", "scope_determination")
     graph.add_edge("scope_determination", END)
-    return graph
+    return graph.compile()
 
 # if __name__ == "__main__":
 #     import argparse

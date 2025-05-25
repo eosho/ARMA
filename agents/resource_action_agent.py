@@ -1,10 +1,15 @@
+"""
+This agent is responsible for performing actions on Azure resources.
+It can delete, get, or list resources.
+"""
+
 import logging
 import os
 import json
 from typing import Dict, Any
 from datetime import datetime
 from langgraph.graph import StateGraph, START, END
-from state_schemas import MasterState
+from state import MasterState
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.resource import ResourceManagementClient
 from langgraph.types import interrupt
@@ -15,6 +20,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# --- Node 1: Delete Resource ---
 def delete_resource_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     Deletes the specified Azure resource using the Azure SDK.
@@ -65,6 +71,7 @@ def delete_resource_node(state: Dict[str, Any]) -> Dict[str, Any]:
         state["resource_action_status"] = "failed"
     return state
 
+# --- Node 2: Get Resource ---
 def get_resource_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     Gets details of the specified Azure resource using the Azure SDK.
@@ -107,6 +114,7 @@ def get_resource_node(state: Dict[str, Any]) -> Dict[str, Any]:
         state["resource_action_status"] = "failed"
     return state
 
+# --- Node 3: List Resources ---
 def list_resources_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     Lists resources of the specified type in the given resource group using the Azure SDK.
@@ -140,6 +148,7 @@ def list_resources_node(state: Dict[str, Any]) -> Dict[str, Any]:
         state["resource_action_status"] = "failed"
     return state
 
+# --- Graph ---
 def build_resource_action_graph():
     graph = StateGraph(MasterState)
     graph.add_node("delete_resource", delete_resource_node)
@@ -165,4 +174,4 @@ def build_resource_action_graph():
     graph.add_edge("delete_resource", END)
     graph.add_edge("get_resource", END)
     graph.add_edge("list_resources", END)
-    return graph 
+    return graph.compile()
