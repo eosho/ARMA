@@ -3,63 +3,28 @@ import uuid
 import asyncio
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain.schema.runnable.config import RunnableConfig
-from st_callable_util import get_streamlit_cb
-# from agent_supervisor import invoke_graph
-from graph import invoke_graph
-import yaml
-import json
+from utils import get_streamlit_cb
+from arma import invoke_arma
 
-# Lets load these values from a yaml file with sample yaml
-with open("st_config.yaml", "r", encoding="utf-8") as f:
-    config = yaml.safe_load(f)
-
-APP_TITLE = config["app_title"]
-APP_ICON = config["app_icon"]
-
-def format_deployment_summary(res):
-    if "deployment_error" in res:
-        return f"❌ Deployment failed:\n{res['deployment_error']}"
-    if "deployment_result" in res:
-        tenant_id = res.get("tenant_id", "fdpo.onmicrosoft.com")
-        result = res["deployment_result"]
-        summary = [f"✅ Deployment succeeded!"]
-        rg = res.get("resource_group_name")
-        if rg:
-            summary.append(f"\n**Resource Group:** {rg}")
-        outputs = result.get("properties", {}).get("outputs")
-        portal_link = None
-        if outputs:
-            summary.append("\n**Outputs:**")
-            for k, v in outputs.items():
-                summary.append(f"- **{k}**: {v.get('value')}")
-                # If the output is a resourceId, add a portal link
-                if k.lower().endswith("id") and isinstance(v.get('value'), str) and v.get('value').startswith("/subscriptions/"):
-                    portal_link = f"https://ms.portal.azure.com/#@{tenant_id}/resource{v.get('value')}/overview"
-        state = result.get("properties", {}).get("provisioningState")
-        if state:
-            summary.append(f"\n**Provisioning State:** {state}")
-        if portal_link:
-            summary.append(f"\n[View in Azure Portal]({portal_link})")
-        return "\n".join(summary)
-    if "validation_error" in res:
-        return f"⚠️ Validation error: {res['validation_error']}"
-    return "No deployment result available."
+APP_ICON = "🤖"
+APP_TITLE = f"{APP_ICON} ARMA"
 
 st.title(APP_TITLE)
-st.markdown("#### StreamlitCallBackHandler Full Implementation")
 
 # Initialize the expander state
 if "expander_open" not in st.session_state:
     st.session_state.expander_open = True
 
-with st.expander("Azure Provisioning Agent via Natural Language"):
+with st.expander("Azure Resource Management Assistant (ARMA) via Natural Language", expanded=True):
     st.write("""
-    This app demonstrates how to use the StreamlitCallbackHandler to stream the response from the Azure provisioning agent.
-    The app is built using the LangGraph framework and the Azure provisioning agent is built using the LangGraph framework.
-    It consists of 3 agents:
+    This app demonstrates how to use the StreamlitCallbackHandler to stream the response from the Azure Resource Management Assistant (ARMA).
+    The app is built using the LangGraph framework and the Azure Resource Management Assistant (ARMA) is built using the LangGraph framework.
+    It consists of 5 agents:
+    - **ARMA Supervisor Agent**: Supervises the other agents and orchestrates the overall flow of the application.
     - **Intent Detection Agent**: Detects the intent of the user's request
     - **Template Validation Agent**: Validates the template based on the intent and provided fields
-    - **Deployment Agent**: Deploys the template to Azure using the Azure ARM template and SDK.
+    - **Resource Action Agent**: Can get, list, or delete a resource
+    - **Deployment Agent**: Can create or update a resource using an ARM template
     """)
 
 if "messages" not in st.session_state:
@@ -73,12 +38,6 @@ if "user_id" not in st.session_state:
 
 # Sidebar
 with st.sidebar:
-  st.header(f"{APP_ICON} {APP_TITLE}")
-
-  ""
-  "Sample app for LangGraph with StreamlitCallbackHandler"
-  ""
-
   if st.button("New Chat", use_container_width=True, icon=":material/chat:"):
       st.session_state.messages = []
       st.session_state.thread_id = str(uuid.uuid4())
@@ -99,11 +58,6 @@ with st.sidebar:
           "Prompts, responses and feedback in this app are not logged."
       )
 
-# Display conversation history on the sidebar in a clean format
-with st.sidebar:
-    st.header("Conversation History")
-
-
 # Messages implementation
 for msg in st.session_state.messages:
     if type(msg) == AIMessage:
@@ -116,28 +70,25 @@ if prompt := st.chat_input("Enter a message"):
 
     with st.chat_message("assistant"):
         msg_placeholder = st.container()
-        st_callback = get_streamlit_cb(msg_placeholder)
+        st_callback = get_streamlit_cb(st.container())
 
         # add a thread id to the config
         config = {"configurable": {"thread_id": st.session_state.thread_id, "user_id": st.session_state.user_id}}
 
         # invoke the graph
-        response = invoke_graph(
-            {"prompt": prompt},
+        response = invoke_arma().invoke(
+            {"messages": [HumanMessage(content=prompt)]},
             config=RunnableConfig(
                 **config,
                 callbacks=[st_callback]
             )
         )
         
-        # Print all agent/system messages to the streamlit app
-        for m in response.get('messages', []):
-            if isinstance(m, dict):
-                st.chat_message(m.get("role", "assistant")).markdown(m.get("content", ""))
-            elif hasattr(m, "content"):
-                st.chat_message("assistant").markdown(m.content)
-
-        # Print the deployment summary at the end
-        summary = format_deployment_summary(response)
-        msg_placeholder.markdown(summary)
-        st.session_state.messages.append(AIMessage(content=summary))
+        # get the last message from the response
+        last_msg = response["messages"][-1].content
+        
+        # Add that last message to the st_message_state
+        st.session_state.messages.append(AIMessage(content=last_msg))
+        
+        # visually refresh the complete response after the callback container
+        msg_placeholder.write(last_msg)

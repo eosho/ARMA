@@ -7,6 +7,7 @@ ARMA is a modular, multi-agent assistant for Azure resource provisioning, valida
 Azure Resource Management Assistant (ARMA) provides a robust, streaming, and user-friendly workflow for managing Azure resources. It leverages a multi-agent architecture to extract user intent, validate ARM templates, and manage Azure resources, with all agent/system progress streamed to the UI.
 
 ## Features
+
 - Modular, multi-agent workflow for Azure resource management
 - Intent extraction, template validation, deployment, and resource action agents
 - Real-time streaming of agent/system progress to the UI
@@ -14,7 +15,9 @@ Azure Resource Management Assistant (ARMA) provides a robust, streaming, and use
 - Production-grade, extensible codebase using LangGraph and LangChain
 
 ## Architecture
+
 ARMA is composed of several subgraphs/agents:
+
 - **Intent Detection Agent**: Extracts user intent and resource details
 - **Template Validation Agent**: Fetches and validates ARM templates
 - **Deployment Agent**: Handles Azure deployments
@@ -30,11 +33,9 @@ All state and progress are logged for real-time UI display.
 3. Run the main entry point (see usage examples in the codebase)
 
 ## Usage
+
 - Interact with ARMA via the provided Streamlit or console harness
 - All agent progress and system messages are streamed to the UI
-
-## Changelog
-- Project renamed to Azure Resource Management Assistant (ARMA) and documentation updated accordingly.
 
 ---
 
@@ -66,13 +67,13 @@ The workflow is composed of three main subgraphs (agents), each responsible for 
 2. **Template Validation**: Validates user-provided fields against ARM template requirements.
 3. **Deployment**: Deploys the validated template to Azure, handling both resource group and subscription scopes.
 
-These subgraphs are orchestrated by a **master graph** (`graph.py`), which manages the overall workflow and state transitions.
+These subgraphs are orchestrated by a **master graph** (see implementation in the main app), which manages the overall workflow and state transitions.
 
 ---
 
 ## State Management
 
-All conversational and workflow state is managed via a single, strongly-typed state object (`MasterState` in `state_schemas.py`). This state includes:
+All conversational and workflow state is managed via a single, strongly-typed state object (`ARMAState` in `state.py`). This state includes:
 
 - `messages`: **Full conversation history** (user, agent, and system/progress messages)
 - `intent`, `resource_type`, `provided_fields`, `resource_group_name`, `subscription_id`, `subscription_name`, `location`
@@ -84,7 +85,7 @@ All conversational and workflow state is managed via a single, strongly-typed st
 
 ## Agent & Subgraph Design
 
-### 1. Intent Detection Subgraph (`agents/intent_detection_langgraph.py`)
+### 1. Intent Detection Subgraph (`agents/intent_agent.py`)
 
 **Purpose:**
 Extracts the user's intent, Azure resource type, and all relevant fields from the user's natural language input.
@@ -117,7 +118,7 @@ flowchart TD
 
 ---
 
-### 2. Template Validation Subgraph (`agents/template_validation_agent.py`)
+### 2. Template Validation Subgraph (`agents/validation_agent.py`)
 
 **Purpose:**
 Validates that all required ARM template parameters are provided and correct, using both code and LLM-based validation.
@@ -212,7 +213,7 @@ flowchart TD
 
 ---
 
-## Main Graph Wiring (`graph.py`)
+## Main Graph Wiring
 
 The **master graph** orchestrates the full workflow by chaining the subgraphs:
 
@@ -298,9 +299,12 @@ flowchart TD
 - **Add new resource types:**
   Add new ARM templates to the `quickstarts/` directory.
 - **Add new agents/subgraphs:**
-  Create new agent modules in `agents/` and wire them into the master graph.
+  Create new agent modules in `agents/` and wire them into the main application logic.
 - **Customize validation or deployment logic:**
   Edit the relevant agent node functions for custom business logic or additional checks.
+- **Prompts and Factories:**
+  - Add or update prompt templates in the `prompts/` directory.
+  - Use the `factory/` directory for shared construction logic or utilities.
 
 ---
 
@@ -308,23 +312,35 @@ flowchart TD
 
 ```
 .
-├── agents/
+├── agents/                  # All agent implementations (intent, validation, deployment, resource actions)
+│   ├── __init__.py
 │   ├── intent_agent.py
 │   ├── validation_agent.py
 │   ├── deployment_agent.py
 │   └── resource_action_agent.py
-├── quickstarts/
+├── factory/                 # Shared factory functions/utilities
+├── prompts/                 # Prompt templates for LLMs
+├── quickstarts/             # ARM templates organized by resource type
 │   ├── microsoft.storage/
-│   │   └── storageaccounts.json
 │   └── microsoft.keyvault/
-│       └── vaults.json
-├── state.py
-├── graph.py
-├── streamlit_app.py
-├── utils.py
-├── requirements.txt
+├── .env                     # Environment variables
+├── arma.py                  # Main application logic (entry point)
+├── events_handler.py        # Event handling logic
+├── state.py                 # State management and schemas
+├── streamlit_app.py         # Streamlit UI
+├── requirements.txt         # Python dependencies
+├── README.md                # Project documentation
 └── ...
 ```
+
+- **agents/**: Contains all agent logic for intent extraction, validation, deployment, and resource actions.
+- **factory/**: Shared construction logic, factories, or utilities for agents and other components.
+- **prompts/**: Prompt templates for LLMs, organized by use case or agent.
+- **quickstarts/**: ARM templates for supported Azure resources, organized by provider/type.
+- **arma.py**: Main entry point for the application logic.
+- **events_handler.py**: Handles event streaming and logging.
+- **state.py**: Defines the ARMAState and manages workflow state.
+- **streamlit_app.py**: Streamlit-based UI for interacting with ARMA.
 
 ---
 
@@ -371,16 +387,7 @@ Currently, ARM templates are loaded from the local file system based on the extr
 - On user request, extract the resource type and use it as a query to the vector store.
 - Retrieve the best-matching template and load it into the workflow state for validation and deployment.
 
-### 2. Proper Logging
+### 2. Notification Agent
 
-Currently, logging is handled via Python's built-in logging module. We need to use LangGraph/LangChain message streaming to log all messages to the UI.
-
-**Planned Improvement:**
-
-- Implement structured logging (e.g., JSON logs) for all agent and system actions.
-- Memory and conversation history are logged to the UI.
-- Support persistent logging to disk, cloud storage, or external logging services (e.g., Azure Monitor, ELK, Datadog).
-- Include correlation IDs, timestamps, and workflow/graph context in all logs for traceability.
-- Optionally, send telemetry logs to Azure Application Insights/Azure Monitor.
-
----
+- Add a notification agent that sends a notification to the user when deployment is complete. It will contain deployment details.
+- This will allow for more flexible notification, support for different notification types (e.g., email, SMS, Azure DevOps, Teams), and easier management of a large notification library.

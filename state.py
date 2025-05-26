@@ -2,11 +2,11 @@
 State schemas for the master graph.
 """
 
-from typing import TypedDict, Optional, Literal, Annotated
+from typing import Optional, Literal, Annotated
+from typing_extensions import TypedDict
 from pydantic import Field
-from langchain_core.messages import AnyMessage, HumanMessage, AIMessage
+from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
-from langgraph.graph import MessagesState
 
 class ARMAState(TypedDict):
     """
@@ -15,7 +15,6 @@ class ARMAState(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
     prompt: str
     intent: Literal["create", "delete", "update", "get", "list"]
-    tenant_id: str = Field(default="fdpo.onmicrosoft.com")
     resource_type: Optional[str]
     template: Optional[dict]
     location: Optional[str]
@@ -31,7 +30,6 @@ class ARMAState(TypedDict):
     subscription_exists: Optional[bool]
     missing_scope_fields: Optional[list]
     missing_scope_message: Optional[str]
-    parameter_file: Optional[str]
     missing_parameters: Optional[list]
     parameter_file_content: Optional[dict]
     validation_result: Optional[dict]

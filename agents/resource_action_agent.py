@@ -1,18 +1,18 @@
 """
-This agent is responsible for performing actions on Azure resources.
-It can delete, get, or list resources.
+This agent is responsible for performing actions on Azure resources: get, list, or delete.
+It uses tools and a ReAct agent to decide which action to take and to handle missing/invalid fields.
 """
 
 import logging
-import os
 import json
-from typing import Dict, Any
-from datetime import datetime
-from langgraph.graph import StateGraph, START, END
+from langgraph.prebuilt import create_react_agent
 from state import ARMAState
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.resource import ResourceManagementClient
 from langgraph.types import interrupt
+from factory.llm_factory import LLMFactory
+from langchain_core.tools import tool
+from prompts import RESOURCE_ACTION_SYSTEM_PROMPT
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,29 +20,146 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# --- Node 1: Delete Resource ---
-def delete_resource_node(state: Dict[str, Any]) -> Dict[str, Any]:
+# Suppress logging for azure sdk
+logging.getLogger("azure").setLevel(logging.WARNING)
+logging.getLogger("azure.core").setLevel(logging.WARNING)
+logging.getLogger("azure.identity").setLevel(logging.WARNING)
+logging.getLogger("azure.mgmt.resource").setLevel(logging.WARNING)
+
+# --- Tool 1: Get Resource ---
+"""
+This tool gets details of the specified Azure resource.
+It uses the Azure SDK to get the resource.
+"""
+@tool
+def get_resource_tool(subscription_id=None, resource_group_name=None, resource_type=None, provided_fields=None, messages=None, **kwargs):
     """
-    Deletes the specified Azure resource using the Azure SDK.
+    Gets details of the specified Azure resource.
+    
+    Args:
+        subscription_id (str): The subscription ID.
+        resource_group_name (str): The resource group name.
+        resource_type (str): The resource type.
     """
-    subscription_id = state.get("subscription_id")
-    resource_group = state.get("resource_group_name")
-    resource_type = state.get("resource_type")
-    provided_fields = state.get("provided_fields", {})
-    resource_name = provided_fields.get("name")
-    if not (subscription_id and resource_group and resource_type and resource_name):
-        msg = "Missing required fields for delete operation."
-        logger.error(msg)
-        return interrupt(msg)
+    resource_name = (provided_fields or {}).get("name")
+    if not (subscription_id and resource_group_name and resource_type and resource_name):
+        return {
+            **kwargs,
+            "messages": (messages or []) + [{"role": "system", "content": "Missing required fields for get operation."}],
+            "resource_action_status": "failed",
+            "resource_action_error": "Missing required fields for get operation."
+        }
     try:
         credential = DefaultAzureCredential()
         client = ResourceManagementClient(credential, subscription_id)
-        # resource_type: e.g., Microsoft.Storage/storageAccounts
         namespace, type_name = resource_type.split("/", 1)
         api_version = "2021-04-01"
-        logger.info(f"Deleting resource: {resource_type} name={resource_name} rg={resource_group} sub={subscription_id}")
+        logger.info(f"Getting resource: {resource_type} name={resource_name} rg={resource_group_name} sub={subscription_id}")
+        resource = client.resources.get(
+            resource_group_name=resource_group_name,
+            resource_provider_namespace=namespace,
+            parent_resource_path="",
+            resource_type=type_name,
+            resource_name=resource_name,
+            api_version=api_version
+        )
+        resource_dict = resource.as_dict() if hasattr(resource, "as_dict") else resource
+        return {
+            **kwargs,
+            "messages": (messages or []) + [{"role": "system", "content": "Resource details fetched."}],
+            "resource_action_result": resource_dict,
+            "resource_action_status": "success"
+        }
+    except Exception as e:
+        logger.error(f"Get resource failed: {e}")
+        return {
+            **kwargs,
+            "messages": (messages or []) + [{"role": "system", "content": f"Get resource failed: {e}"}],
+            "resource_action_result": None,
+            "resource_action_error": str(e),
+            "resource_action_status": "failed"
+        }
+
+# --- Tool 2: List Resources ---
+"""
+This tool lists resources of the specified type in the given resource group.
+It uses the Azure SDK to list resources.
+"""
+@tool
+def list_resources_tool(subscription_id=None, resource_group_name=None, resource_type=None, messages=None, **kwargs):
+    """
+    Lists resources of the specified type in the given resource group.
+    
+    Args:
+        subscription_id (str): The subscription ID.
+        resource_group_name (str): The resource group name.
+        resource_type (str): The resource type.
+    """
+    if not (subscription_id and resource_group_name and resource_type):
+        return {
+            **kwargs,
+            "messages": (messages or []) + [{"role": "system", "content": "Missing required fields for list operation."}],
+            "resource_action_status": "failed",
+            "resource_action_error": "Missing required fields for list operation."
+        }
+    try:
+        credential = DefaultAzureCredential()
+        client = ResourceManagementClient(credential, subscription_id)
+        namespace, type_name = resource_type.split("/", 1)
+        api_version = "2021-04-01"
+        logger.info(f"Listing resources: {resource_type} in rg={resource_group_name} sub={subscription_id}")
+        resources = client.resources.list_by_resource_group(
+            resource_group_name=resource_group_name,
+            filter=f"resourceType eq '{namespace}/{type_name}'"
+        )
+        resource_list = [r.as_dict() if hasattr(r, "as_dict") else r for r in resources]
+        return {
+            **kwargs,
+            "messages": (messages or []) + [{"role": "system", "content": "Resources listed."}],
+            "resource_action_result": resource_list,
+            "resource_action_status": "success"
+        }
+    except Exception as e:
+        logger.error(f"List resources failed: {e}")
+        return {
+            **kwargs,
+            "messages": (messages or []) + [{"role": "system", "content": f"List resources failed: {e}"}],
+            "resource_action_result": None,
+            "resource_action_error": str(e),
+            "resource_action_status": "failed"
+        }
+
+# --- Tool 3: Delete Resource ---
+"""
+This tool deletes the specified Azure resource.
+It uses the Azure SDK to delete the resource.
+"""
+@tool
+def delete_resource_tool(subscription_id=None, resource_group_name=None, resource_type=None, provided_fields=None, messages=None, **kwargs):
+    """
+    Deletes the specified Azure resource.
+    
+    Args:
+        subscription_id (str): The subscription ID.
+        resource_group_name (str): The resource group name.
+        resource_type (str): The resource type.
+    """
+    resource_name = (provided_fields or {}).get("name")
+    if not (subscription_id and resource_group_name and resource_type and resource_name):
+        return {
+            **kwargs,
+            "messages": (messages or []) + [{"role": "system", "content": "Missing required fields for delete operation."}],
+            "resource_action_status": "failed",
+            "resource_action_error": "Missing required fields for delete operation."
+        }
+    try:
+        credential = DefaultAzureCredential()
+        client = ResourceManagementClient(credential, subscription_id)
+        namespace, type_name = resource_type.split("/", 1)
+        api_version = "2021-04-01"
+        logger.info(f"Deleting resource: {resource_type} name={resource_name} rg={resource_group_name} sub={subscription_id}")
         delete_poller = client.resources.begin_delete(
-            resource_group_name=resource_group,
+            resource_group_name=resource_group_name,
             resource_provider_namespace=namespace,
             parent_resource_path="",
             resource_type=type_name,
@@ -51,127 +168,64 @@ def delete_resource_node(state: Dict[str, Any]) -> Dict[str, Any]:
         )
         delete_result = delete_poller.result()
         if delete_result is not None:
-            # Try to convert to dict if possible
             result_dict = delete_result.as_dict() if hasattr(delete_result, "as_dict") else delete_result
-            try:
-                result_json = json.dumps(result_dict, indent=2, default=str)
-            except Exception:
-                result_json = str(result_dict)
-            logger.info(f"Delete result: {result_json}")
-            state["resource_action_result"] = result_dict
+            result_msg = result_dict
         else:
-            msg = f"Resource {resource_type} '{resource_name}' deleted successfully."
-            logger.info(msg)
-            state["resource_action_result"] = msg
-        state["resource_action_status"] = "success"
+            result_msg = f"Resource {resource_type} '{resource_name}' deleted successfully."
+        return {
+            **kwargs,
+            "messages": (messages or []) + [{"role": "system", "content": "Resource deleted."}],
+            "resource_action_result": result_msg,
+            "resource_action_status": "success"
+        }
     except Exception as e:
         logger.error(f"Delete resource failed: {e}")
-        state["resource_action_result"] = None
-        state["resource_action_error"] = str(e)
-        state["resource_action_status"] = "failed"
-    return state
+        return {
+            **kwargs,
+            "messages": (messages or []) + [{"role": "system", "content": f"Delete resource failed: {e}"}],
+            "resource_action_result": None,
+            "resource_action_error": str(e),
+            "resource_action_status": "failed"
+        }
 
-# --- Node 2: Get Resource ---
-def get_resource_node(state: Dict[str, Any]) -> Dict[str, Any]:
+# --- Tool 4: Prompt for Missing/Invalid Fields ---
+"""
+This tool prompts the user for missing or invalid fields for resource actions.
+It raises an interrupt to stop the agent.
+"""
+@tool
+def prompt_for_missing_action_tool(resource_action_error=None, messages=None, **kwargs):
     """
-    Gets details of the specified Azure resource using the Azure SDK.
+    Prompts the user for missing or invalid fields for resource actions.
+    
+    Args:
+        resource_action_error (str): The error message.
+        messages (list): The list of messages to pass to the LLM.
+        **kwargs: Additional keyword arguments.
     """
-    subscription_id = state.get("subscription_id")
-    resource_group = state.get("resource_group_name")
-    resource_type = state.get("resource_type")
-    provided_fields = state.get("provided_fields", {})
-    resource_name = provided_fields.get("name")
-    if not (subscription_id and resource_group and resource_type and resource_name):
-        msg = "Missing required fields for get operation."
-        logger.error(msg)
-        return interrupt(msg)
-    try:
-        credential = DefaultAzureCredential()
-        client = ResourceManagementClient(credential, subscription_id)
-        namespace, type_name = resource_type.split("/", 1)
-        api_version = "2021-04-01"
-        logger.info(f"Getting resource: {resource_type} name={resource_name} rg={resource_group} sub={subscription_id}")
-        resource = client.resources.get(
-            resource_group_name=resource_group,
-            resource_provider_namespace=namespace,
-            parent_resource_path="",
-            resource_type=type_name,
-            resource_name=resource_name,
-            api_version=api_version
-        )
-        resource_dict = resource.as_dict() if hasattr(resource, "as_dict") else resource
-        try:
-            resource_json = json.dumps(resource_dict, indent=2, default=str)
-        except Exception:
-            resource_json = str(resource_dict)
-        logger.info(f"Resource details: {resource_json}")
-        state["resource_action_result"] = resource_dict
-        state["resource_action_status"] = "success"
-    except Exception as e:
-        logger.error(f"Get resource failed: {e}")
-        state["resource_action_result"] = None
-        state["resource_action_error"] = str(e)
-        state["resource_action_status"] = "failed"
-    return state
+    msg = resource_action_error or "Missing or invalid fields for resource action."
+    updated_messages = list(messages) if messages else []
+    updated_messages.append({"role": "system", "content": msg})
+    raise interrupt(msg)
 
-# --- Node 3: List Resources ---
-def list_resources_node(state: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Lists resources of the specified type in the given resource group using the Azure SDK.
-    """
-    subscription_id = state.get("subscription_id")
-    resource_group = state.get("resource_group_name")
-    resource_type = state.get("resource_type")
-    if not (subscription_id and resource_group and resource_type):
-        msg = "Missing required fields for list operation."
-        logger.error(msg)
-        return interrupt(msg)
-    try:
-        credential = DefaultAzureCredential()
-        client = ResourceManagementClient(credential, subscription_id)
-        namespace, type_name = resource_type.split("/", 1)
-        api_version = "2021-04-01"
-        logger.info(f"Listing resources: {resource_type} in rg={resource_group} sub={subscription_id}")
-        resources = client.resources.list_by_resource_group(
-            resource_group_name=resource_group,
-            filter=f"resourceType eq '{namespace}/{type_name}'"
-        )
-        resource_list = [r.as_dict() if hasattr(r, "as_dict") else r for r in resources]
-        logger.info(f"Resources: {json.dumps(resource_list, indent=2)}")
-        state["resource_action_result"] = resource_list
-        state["resource_action_status"] = "success"
-        logger.info(f"Listed {len(state['resource_action_result'])} resources.")
-    except Exception as e:
-        logger.error(f"List resources failed: {e}")
-        state["resource_action_result"] = None
-        state["resource_action_error"] = str(e)
-        state["resource_action_status"] = "failed"
-    return state
-
-# --- Graph ---
-def build_resource_action_graph():
-    graph = StateGraph(ARMAState)
-    graph.add_node("delete_resource", delete_resource_node)
-    graph.add_node("get_resource", get_resource_node)
-    graph.add_node("list_resources", list_resources_node)
-    # Route based on intent
-    def route_intent(state):
-        intent = state.get("intent")
-        if intent == "delete":
-            return "delete_resource"
-        elif intent == "get":
-            return "get_resource"
-        elif intent == "list":
-            return "list_resources"
-        else:
-            return END
-    graph.add_conditional_edges(START, route_intent, {
-        "delete_resource": "delete_resource",
-        "get_resource": "get_resource",
-        "list_resources": "list_resources",
-        END: END
-    })
-    graph.add_edge("delete_resource", END)
-    graph.add_edge("get_resource", END)
-    graph.add_edge("list_resources", END)
-    return graph.compile()
+# --- Build ReAct Agent ---
+"""
+This function builds the ReAct agent for resource action.
+It uses the tools defined above.
+"""
+def build_resource_action_agent():
+    llm = LLMFactory.get_llm()
+    tools = [
+        get_resource_tool,
+        list_resources_tool,
+        delete_resource_tool,
+        prompt_for_missing_action_tool,
+    ]
+    agent = create_react_agent(
+        tools=tools,
+        model=llm,
+        state_schema=ARMAState,
+        prompt=RESOURCE_ACTION_SYSTEM_PROMPT,
+        name="resource_action_agent"
+    )
+    return agent

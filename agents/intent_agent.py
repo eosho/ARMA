@@ -4,20 +4,20 @@ It also determines the scope of the query and checks for required scope fields.
 """
 
 import logging
-from typing import Dict, Any, TypedDict, Optional
-from langgraph.graph import StateGraph, START, END
-import re
-import json
+from typing import Dict, Any
+from langgraph.prebuilt import create_react_agent
 from langgraph.types import interrupt
+from state import ARMAState
 from langchain_community.vectorstores import FAISS
 from langchain_openai import AzureOpenAIEmbeddings
 from langchain.schema import Document
 import os
-from state import ARMAState
-from langchain_openai import AzureChatOpenAI
 from dotenv import load_dotenv
-from factory.llmfactory import get_llm
-from prompts.prompts import INTENT_EXTRACTION_SYSTEM_PROMPT
+from factory.llm_factory import LLMFactory
+from prompts import INTENT_EXTRACTION_SYSTEM_PROMPT
+import json
+from langchain_core.tools import tool
+from langchain_core.messages import SystemMessage, HumanMessage
 
 # load environment variables
 load_dotenv()
@@ -28,26 +28,44 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# --- Node 1: Intent Extraction ---
-def intent_extraction_node(state: Dict[str, Any]) -> Dict[str, Any]:
+# --- Tool 1: Intent Extraction ---
+"""
+This tool extracts intent, resource_type, provided_fields, resource_group_name, subscription_id, subscription_name, and location from the user's prompt using the LLM.
+"""
+@tool
+def extract_intent_tool(messages, **kwargs):
     """
-    Uses the LLM to extract intent, resource_type (full Azure type), provided_fields, resource_group_name, subscription_id, and subscription_name from the prompt.
-    The LLM prompt is loaded from prompts.prompts.INTENT_EXTRACTION_SYSTEM_PROMPT for maintainability.
+    Extracts intent, resource_type, provided_fields, resource_group_name, subscription_id, subscription_name, and location from the user's prompt using the LLM.
+    
+    Args:
+        messages (list): The list of messages to pass to the LLM.
+        **kwargs: Additional keyword arguments.
+
+    Returns:
+        dict: The intent, resource_type, provided_fields, resource_group_name, subscription_id, subscription_name, and location.
     """
-    llm = get_llm()
+    llm = LLMFactory.get_llm()
     system_prompt = INTENT_EXTRACTION_SYSTEM_PROMPT
-    user_message = state['messages'][-1].content
+    user_message = messages[-1]["content"] if isinstance(messages[-1], dict) else getattr(messages[-1], "content", "")
+    
+    # use human message as user message
     response = llm.invoke([
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_message}
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_message)
     ])
     try:
         result = json.loads(response.content)
     except Exception:
         result = {}
     logger.info(f"LLM intent extraction result: {result}")
+    updated_messages = list(messages)
+    updated_messages.append({
+        "role": "assistant",
+        "content": response.content
+    })
     return {
-        **state,
+        **kwargs,
+        "messages": updated_messages,
         "intent": result.get("intent"),
         "resource_type": result.get("resource_type"),
         "provided_fields": result.get("provided_fields", {}),
@@ -55,106 +73,165 @@ def intent_extraction_node(state: Dict[str, Any]) -> Dict[str, Any]:
         "subscription_id": result.get("subscription_id"),
         "subscription_name": result.get("subscription_name"),
         "location": result.get("location"),
-        "prompt": state["messages"][-1].content
+        "user_query": user_message
     }
 
-# --- Node 2: Template Fetch ---
-def template_fetch_node(state: Dict[str, Any]) -> Dict[str, Any]:
+# --- Tool 2: Template Fetch ---
+"""
+This tool loads the ARM template from a local file path based on the resource_type.
+"""
+@tool
+def fetch_template_tool(resource_type=None, messages=None, **kwargs):
     """
-    Dynamically loads the ARM template from a local file path based on the resource_type.
-    E.g., Microsoft.Storage/storageAccounts -> quickstarts/microsoft.storage/storageaccounts.json
-    """
-    resource_type = state.get("resource_type")
-    logger.info(f"Loading template for resource_type: {resource_type}")
+    Loads the ARM template from a local file path based on the resource_type.
     
-    try:
-        if not resource_type:
-            raise ValueError("No resource_type provided.")
-        namespace, resource = resource_type.split("/", 1)
-        template_path = f"quickstarts/{namespace.lower()}/{resource.lower()}.json"
-        logger.info(f"Template path: {template_path}")
-        if not os.path.exists(template_path):
-            raise FileNotFoundError(f"Template file not found: {template_path}")
-        with open(template_path, "r", encoding="utf-8") as f:
-            template_json = f.read()
-        logger.info(f"Loaded template from {template_path}")
-        logger.info(f"Template: {template_json}")
-        return {**state, "template": template_json, "template_path": template_path}
-    except Exception as e:
-        logger.exception("template_fetch_node failed")
-        return {**state, "template": "{}", "template_path": "", "template_error": str(e)}
+    Args:
+        resource_type (str): The resource type to fetch the template for.
+        messages (list): The list of messages to pass to the LLM.
+        **kwargs: Additional keyword arguments.
 
-# --- Node 3: Scope Determination ---
-def scope_determination_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    Returns:
+        dict: The ARM template.
+    """
+    logger.info(f"Loading template for resource_type: {resource_type}")
+    template = {}
+    template_path = ""
+    template_error = None
+    if resource_type:
+        try:
+            namespace, resource = resource_type.split("/", 1)
+            template_path = f"quickstarts/{namespace.lower()}/{resource.lower()}.json"
+            logger.info(f"Template path: {template_path}")
+            if not os.path.exists(template_path):
+                raise FileNotFoundError(f"Template file not found: {template_path}")
+            with open(template_path, "r", encoding="utf-8") as f:
+                template = json.load(f)
+            logger.info(f"Loaded template from {template_path}")
+            logger.info(f"Template loaded in fetch_template_tool: {template} (type: {type(template)})")
+        except Exception as e:
+            logger.exception("template_fetch_tool failed")
+            template_error = str(e)
+    else:
+        template_error = "No resource_type provided."
+    updated_messages = list(messages) if messages else []
+    updated_messages.append({
+        "role": "system",
+        "content": f"Template fetch: {template_path or 'not found'}"
+    })
+    return {
+        **kwargs,
+        "messages": updated_messages,
+        "template": template,
+        "template_path": template_path,
+        "template_error": template_error
+    }
+
+# --- Tool 3: Scope Determination ---
+"""
+This tool determines the scope from the ARM template schema. Supports subscription and resourceGroups only.
+"""
+@tool
+def determine_scope_tool(template=None, messages=None, **kwargs):
     """
     Determines the scope from the ARM template schema. Supports subscription and resourceGroups only.
+    
+    Args:
+        template (dict): The ARM template.
+        messages (list): The list of messages to pass to the LLM.
+        **kwargs: Additional keyword arguments.
+
+    Returns:
+        dict: The scope.
     """
-    template = state.get("template")
     scope = None
     try:
-        if isinstance(template, str):
-            template = json.loads(template)
-        if template and "$schema" in template:
-            schema_url = template["$schema"]
+        t = template
+        if isinstance(t, str):
+            t = json.loads(t)
+        if t and "$schema" in t:
+            schema_url = t["$schema"]
             if "subscription" in schema_url:
                 scope = "subscription"
             else:
                 scope = "resourceGroup"
     except Exception as e:
-        logger.error(f"scope_determination_node failed: {e}")
+        logger.error(f"determine_scope_tool failed: {e}")
     logger.info(f"Determined scope: {scope}")
-    return {**state, "scope": scope}
+    updated_messages = list(messages) if messages else []
+    updated_messages.append({
+        "role": "system",
+        "content": f"Scope determined: {scope}"
+    })
+    return {
+        **kwargs,
+        "messages": updated_messages,
+        "scope": scope
+    }
 
-# --- Node 4: Scope Fields Check ---
-def scope_fields_check_node(state: Dict[str, Any]) -> Dict[str, Any]:
+# --- Tool 4: Scope Fields Check ---
+"""
+This tool checks for required scope fields and interrupts if missing.
+"""
+@tool
+def check_scope_fields_tool(resource_group_name=None, subscription_id=None, subscription_name=None, messages=None, **kwargs):
     """
     Checks for required scope fields and interrupts if missing.
     - resource_group_name must be present
     - Either subscription_id (GUID) or subscription_name (string) must be present
     If missing, interrupts and prompts the user for the missing fields.
+    
+    Args:
+        resource_group_name (str): The resource group name.
+        subscription_id (str): The subscription ID.
+        subscription_name (str): The subscription name.
+        messages (list): The list of messages to pass to the LLM.
+        **kwargs: Additional keyword arguments.
     """
     missing = []
-    if not state.get("resource_group_name"):
+    if not resource_group_name:
         missing.append("resource_group_name")
-    if not (state.get("subscription_id") or state.get("subscription_name")):
+    if not (subscription_id or subscription_name):
         missing.append("subscription_id or subscription_name")
+    updated_messages = list(messages) if messages else []
     if missing:
         message = f"Please provide the following required fields: {', '.join(missing)}."
         logger.info(f"Interrupting for missing fields: {missing}")
+        updated_messages.append({
+            "role": "system",
+            "content": message
+        })
         return interrupt(message)
     logger.info("All required scope fields are present.")
-    return state
+    updated_messages.append({
+        "role": "system",
+        "content": "All required scope fields are present."
+    })
+    return {
+        **kwargs,
+        "messages": updated_messages,
+        "resource_group_name": resource_group_name,
+        "subscription_id": subscription_id,
+        "subscription_name": subscription_name
+    }
 
-# --- Graph Construction ---
-def build_intent_detection_graph():
-    graph = StateGraph(ARMAState)
-    graph.add_node("intent_extraction", intent_extraction_node)
-    graph.add_node("scope_fields_check", scope_fields_check_node)
-    graph.add_node("template_fetch", template_fetch_node)
-    graph.add_node("scope_determination", scope_determination_node)
-    # Edges
-    graph.add_edge(START, "intent_extraction")
-    graph.add_edge("intent_extraction", "scope_fields_check")
-    graph.add_conditional_edges(
-        "scope_fields_check",
-        lambda state: "template_fetch" if state.get("intent") in ["create", "update"] else END
+# --- Build ReAct Agent ---
+"""
+This function builds the ReAct agent for intent detection.
+It uses the tools defined above.
+"""
+def build_intent_agent():
+    llm = LLMFactory.get_llm()
+    tools = [
+        extract_intent_tool,
+        check_scope_fields_tool,
+        fetch_template_tool,
+        determine_scope_tool,
+    ]
+    agent = create_react_agent(
+        tools=tools,
+        model=llm,
+        prompt=INTENT_EXTRACTION_SYSTEM_PROMPT,
+        name="intent_agent",
+        state_schema=ARMAState
     )
-    graph.add_edge("template_fetch", "scope_determination")
-    graph.add_edge("scope_determination", END)
-    return graph.compile()
-
-# if __name__ == "__main__":
-#     import argparse
-#     parser = argparse.ArgumentParser(description="Run the intent detection and template fetch workflow.")
-#     parser.add_argument("--prompt", type=str, help="User prompt/question", required=True)
-#     args = parser.parse_args()
-#     state = {"prompt": args.prompt}
-#     graph = build_intent_detection_graph().compile()
-#     try:
-#         result = graph.invoke(state)
-#         logger.info("Intent detection workflow completed successfully.")
-#         print("\n--- Final State ---\n")
-#         for k, v in result.items():
-#             print(f"{k}: {v}")
-#     except Exception as e:
-#         logger.error(f"Intent detection workflow failed: {e}")
+    return agent

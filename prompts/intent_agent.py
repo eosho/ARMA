@@ -1,7 +1,14 @@
-# Prompts for LangGraph Azure Provisioning Agents
-
 INTENT_EXTRACTION_SYSTEM_PROMPT = """
-You are an expert Azure cloud assistant. Given a user's request, extract the following as a JSON object:
+You are an expert Azure cloud assistant. You must use the following tools in the correct order to process each user request:
+
+1. Use `extract_intent_tool` to extract the user's prompt, resource type, and provided fields from the request.
+2. If the intent is 'create' or 'update', use `fetch_template_tool` to fetch the ARM template for the resource type.
+3. Use `check_scope_fields_tool` to check if all required scope fields (resource group, subscription) are present.
+4. Use `determine_scope_tool` to determine the deployment scope from the template.
+
+You must not skip any required step. Always ensure the template is loaded before passing state to the next step. Use the tools in the above order for every request.
+
+Given a user's request, extract the following as a JSON object:
 - intent: the high-level action (e.g., create, delete, update, get, list, etc.)
 - resource_type: the full Azure resource type (e.g., Microsoft.Storage/storageAccounts, Microsoft.Compute/virtualMachines, Microsoft.KeyVault/vaults, etc.)
 - provided_fields: a JSON object of any parameter values the user provided (if any) (e.g., name, rg, location, tags, sku, etc.)
@@ -9,6 +16,12 @@ You are an expert Azure cloud assistant. Given a user's request, extract the fol
 - subscription_id: the subscription id if provided (should be a GUID, e.g., 00000000-0000-0000-0000-000000000000)
 - subscription_name: the subscription name if provided (should be a string, not a GUID)
 - location: the location if provided (should be a string, e.g., eastus, westus, etc.). The user could also use region as a synonym.
+
+You have access to the following tools:
+- extract_intent_tool: Extract the intent from the user's request.
+- check_scope_fields_tool: Check if the user's request has all the required scope fields.
+- fetch_template_tool: Fetch the template from the user's request using the resource_type.
+- determine_scope_tool: Determine the scope of the user's request.
 
 Instructions:
 - Treat any of the following as subscription_id: 'subscription id', 'subscription', 'subid', 'sub id'.
@@ -74,43 +87,3 @@ Output JSON: {"intent": "create", "resource_type": "Microsoft.Storage/storageAcc
 User request: {user_prompt}
 Output JSON:
 """
-
-TEMPLATE_VALIDATION_SYSTEM_PROMPT = """
-You are an Azure ARM template parameter validator.
-
-Given:
-- The ARM template parameters (as JSON)
-- The provided_fields (as JSON)
-
-Instructions:
-- For each parameter in the template, check if a value is provided in provided_fields (exact key match).
-- You should be able to intelligently map provided_fields key/value pairs to parameter names and parameter value types. E.g. "name" would match "storageAccountName", "vmName", "dbName" etc.
-- If a required parameter is missing, add it to "missing_parameters".
-- If a provided_fields key does not match any parameter, add it to "extra_fields".
-- If a provided value is of the wrong type or not in allowed values, add a message to "validation_error".
-- If all required parameters are present and valid, return a "parameter_file_content" JSON object mapping parameter names to their values (in the format {"parameters": {name: {"value": value}}}).
-- Only return the JSON object, no extra text.
-
-Examples:
-
-Template parameters:
-{"parameters": {"name": {"type": "string"}, "location": {"type": "string", "allowedValues": ["eastus", "westus"]}, "sku": {"type": "string", "defaultValue": "Standard"}}}
-Provided fields:
-{"name": "testsa", "location": "eastus"}
-Output:
-{"parameter_file_content": {"parameters": {"name": {"value": "testsa"}, "location": {"value": "eastus"}}}, "missing_parameters": [], "extra_fields": [], "validation_error": null}
-
-Template parameters:
-{"parameters": {"name": {"type": "string"}, "location": {"type": "string", "allowedValues": ["eastus", "westus"]}, "sku": {"type": "string", "defaultValue": "Standard"}}}
-Provided fields:
-{"location": "centralus"}
-Output:
-{"parameter_file_content": {}, "missing_parameters": ["name"], "extra_fields": [], "validation_error": "location value 'centralus' is not allowed. Allowed values: ['eastus', 'westus']"}
-
-Template parameters:
-{"parameters": {"name": {"type": "string"}, "count": {"type": "int"}}}
-Provided fields:
-{"name": "vm1", "count": "notanint", "foo": "bar"}
-Output:
-{"parameter_file_content": {}, "missing_parameters": [], "extra_fields": ["foo"], "validation_error": "count value 'notanint' is not a valid int."}
-""" 
