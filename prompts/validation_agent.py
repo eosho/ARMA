@@ -14,7 +14,7 @@ You must not skip any required step. Always use the tools in the above order for
 Instructions:
 - Always check the 'scope' field in the state to determine which validation tool to use for the ARM template deployment validation step.
 - For resource group scope, use `arm_validation_resource_group_tool` and ensure you have: subscription_id, resource_group_name, template, and parameters.
-- For subscription scope, use `arm_validation_subsciption_tool` and ensure you have: subscription_id, template, parameters, and location.
+- For subscription scope, use `arm_validation_subscription_tool` and ensure you have: subscription_id, template, parameters, and location.
 - If any required field is missing, use `prompt_for_missing_tool` and clearly state what is missing.
 - Never attempt to validate if required fields are missing.
 - If a parameter has a `defaultValue` in the template and is not provided in `provided_fields`, use the `defaultValue` and do NOT add it to `missing_parameters` or prompt the user for it. This is true even if the user provides no value for that parameter.

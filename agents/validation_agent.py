@@ -101,7 +101,7 @@ def check_subscription_tool(subscription_id=None, subscription_name=None, messag
 This tool checks if the resource group exists in the given subscription.
 """
 @tool
-def check_resource_group_tool(resource_group_name=None, subscription_id=None, messages=None, **kwargs):
+def check_resource_group_tool(resource_group_name=None, subscription_id=None, location=None, messages=None, **kwargs):
     """
     Checks if the resource group exists in the given subscription.
     
@@ -115,6 +115,14 @@ def check_resource_group_tool(resource_group_name=None, subscription_id=None, me
             credential = DefaultAzureCredential()
             rg_client = ResourceManagementClient(credential, subscription_id)
             exists = rg_client.resource_groups.check_existence(resource_group_name)
+            
+            # Lets create the resource group if it doesn't exist. Why not?
+            if not exists:
+                rg_client.resource_groups.create_or_update(
+                    resource_group_name,
+                    {"location": location}
+                )
+                exists = True
     except Exception as e:
         logger.error(f"Failed to check resource group: {e}")
     updated_messages = list(messages) if messages else []
@@ -128,52 +136,7 @@ def check_resource_group_tool(resource_group_name=None, subscription_id=None, me
         "resource_group_exists": exists
     }
 
-# --- Tool 3: Create Resource Group ---
-"""
-This tool creates a resource group in the given subscription.
-"""
-@tool
-def create_resource_group_tool(resource_group_name=None, subscription_id=None, location=None, messages=None, **kwargs):
-    """
-    Creates a resource group in the given subscription.
-    
-    Args:
-        resource_group_name (str): The resource group name.
-        subscription_id (str): The subscription ID.
-        location (str): The location.
-    """
-    if not (resource_group_name and subscription_id and location):
-        logger.error("Missing required fields for resource group creation.")
-        return {
-            **kwargs,
-            "messages": (messages or []) + [{"role": "system", "content": "Missing required fields for resource group creation."}],
-            "resource_group_creation_status": "failed",
-            "resource_group_creation_error": "Missing required fields for resource group creation."
-        }
-    try:
-        credential = DefaultAzureCredential()
-        rg_client = ResourceManagementClient(credential, subscription_id)
-        rg_client.resource_groups.create_or_update(
-            resource_group_name,
-            {
-                "location": location
-            }
-        )
-        return {
-            **kwargs,
-            "messages": (messages or []) + [{"role": "system", "content": "Resource group created successfully."}],
-            "resource_group_creation_status": "success"
-        }
-    except Exception as e:
-        logger.error(f"Failed to create resource group: {e}")
-        return {
-            **kwargs,
-            "messages": (messages or []) + [{"role": "system", "content": f"Failed to create resource group: {e}"}],
-            "resource_group_creation_status": "failed",
-            "resource_group_creation_error": str(e)
-        }
-
-# --- Tool 4: Template Validation ---
+# --- Tool 3: Template Validation ---
 """
 This tool validates the provided fields against the template parameters using the LLM.
 """
@@ -356,7 +319,7 @@ def arm_validation_resource_group_tool(template=None, parameter_file_content=Non
 This tool validates the ARM template and parameters against Azure at the subscription scope (without deploying).
 """
 @tool
-def arm_validation_subsciption_tool(template=None, parameter_file_content=None, subscription_id=None, location=None, scope=None, messages=None, **kwargs):
+def arm_validation_subscription_tool(template=None, parameter_file_content=None, subscription_id=None, location=None, scope=None, messages=None, **kwargs):
     """
     Validates the ARM template and parameters against Azure at the subscription scope (without deploying).
     Stores the validation result and any errors in the state.
@@ -370,7 +333,7 @@ def arm_validation_subsciption_tool(template=None, parameter_file_content=None, 
         messages (list): The list of messages to pass to the LLM.
         **kwargs: Additional keyword arguments.
     """
-    logger.info(f"[arm_validation_subsciption_tool] Template: {template}")
+    logger.info(f"[arm_validation_subscription_tool] Template: {template}")
     credential = DefaultAzureCredential()
     validation_result = None
     validation_error = None
@@ -427,11 +390,10 @@ def build_validation_agent():
     tools = [
         check_subscription_tool,
         check_resource_group_tool,
-        create_resource_group_tool,
         template_validation_tool,
         prompt_for_missing_tool,
         arm_validation_resource_group_tool,
-        arm_validation_subsciption_tool,
+        arm_validation_subscription_tool,
     ]
     agent = create_react_agent(
         tools=tools,
