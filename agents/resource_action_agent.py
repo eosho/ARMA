@@ -9,7 +9,7 @@ import json
 from typing import Dict, Any
 from datetime import datetime
 from langgraph.graph import StateGraph, START, END
-from state import MasterState
+from state import ARMAState
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.resource import ResourceManagementClient
 from langgraph.types import interrupt
@@ -150,7 +150,7 @@ def list_resources_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
 # --- Graph ---
 def build_resource_action_graph():
-    graph = StateGraph(MasterState)
+    graph = StateGraph(ARMAState)
     graph.add_node("delete_resource", delete_resource_node)
     graph.add_node("get_resource", get_resource_node)
     graph.add_node("list_resources", list_resources_node)

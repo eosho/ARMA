@@ -13,7 +13,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_openai import AzureOpenAIEmbeddings
 from langchain.schema import Document
 import os
-from state import MasterState
+from state import ARMAState
 from langchain_openai import AzureChatOpenAI
 from dotenv import load_dotenv
 from factory.llmfactory import get_llm
@@ -127,7 +127,7 @@ def scope_fields_check_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
 # --- Graph Construction ---
 def build_intent_detection_graph():
-    graph = StateGraph(MasterState)
+    graph = StateGraph(ARMAState)
     graph.add_node("intent_extraction", intent_extraction_node)
     graph.add_node("scope_fields_check", scope_fields_check_node)
     graph.add_node("template_fetch", template_fetch_node)

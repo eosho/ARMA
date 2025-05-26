@@ -11,7 +11,7 @@ from azure.identity import DefaultAzureCredential
 from azure.mgmt.resource import ResourceManagementClient
 from azure.mgmt.resource.resources.models import DeploymentMode
 from langgraph.graph import StateGraph, START, END
-from state import MasterState
+from state import ARMAState
 from datetime import datetime
 
 logging.basicConfig(
@@ -139,7 +139,7 @@ def subscription_deployment_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
 # --- Graph ---
 def build_deployment_graph():
-    graph = StateGraph(MasterState)
+    graph = StateGraph(ARMAState)
     graph.add_node("resource_group_deployment", resource_group_deployment_node)
     graph.add_node("subscription_deployment", subscription_deployment_node)
     # Conditional edge based on scope

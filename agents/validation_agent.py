@@ -11,7 +11,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 import uuid
 from langgraph.graph import StateGraph, START, END
-from state import MasterState
+from state import ARMAState
 from langchain_openai import AzureChatOpenAI
 from dotenv import load_dotenv
 from azure.identity import DefaultAzureCredential
@@ -213,7 +213,7 @@ def arm_template_deployment_validation_node(state: Dict[str, Any]) -> Dict[str, 
 
 # --- Graph ---
 def build_template_validation_graph():
-    graph = StateGraph(MasterState)
+    graph = StateGraph(ARMAState)
     graph.add_node("check_subscription", check_subscription_node)
     graph.add_node("check_resource_group", check_resource_group_node)
     graph.add_node("validate", template_validation_node)
