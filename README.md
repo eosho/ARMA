@@ -86,7 +86,7 @@ All conversational and workflow state is managed via a single, strongly-typed st
 
 ### 1. Intent Detection Subgraph (`agents/intent_detection_langgraph.py`)
 
-**Purpose:**  
+**Purpose:**
 Extracts the user's intent, Azure resource type, and all relevant fields from the user's natural language input.
 
 **Nodes:**
@@ -152,7 +152,7 @@ flowchart TD
 
 ### 3. Deployment Subgraph (`agents/deployment_agent.py`)
 
-**Purpose:**  
+**Purpose:**
 Deploys the validated ARM template to Azure, handling both resource group and subscription-level deployments.
 
 **Nodes:**
@@ -181,7 +181,7 @@ flowchart TD
 
 ### 4. Resource Action Agent (`agents/resource_action_agent.py`)
 
-**Purpose:**  
+**Purpose:**
 Handles Azure resource management actions such as get, list, and delete for resources, using the Azure SDK.
 
 **Nodes:**
@@ -295,11 +295,11 @@ flowchart TD
 
 ## Extending the System
 
-- **Add new resource types:**  
+- **Add new resource types:**
   Add new ARM templates to the `quickstarts/` directory.
-- **Add new agents/subgraphs:**  
+- **Add new agents/subgraphs:**
   Create new agent modules in `agents/` and wire them into the master graph.
-- **Customize validation or deployment logic:**  
+- **Customize validation or deployment logic:**
   Edit the relevant agent node functions for custom business logic or additional checks.
 
 ---
@@ -309,8 +309,8 @@ flowchart TD
 ```
 .
 ├── agents/
-│   ├── intent_detection_langgraph.py
-│   ├── template_validation_agent.py
+│   ├── intent_agent.py
+│   ├── validation_agent.py
 │   ├── deployment_agent.py
 │   └── resource_action_agent.py
 ├── quickstarts/
@@ -318,7 +318,7 @@ flowchart TD
 │   │   └── storageaccounts.json
 │   └── microsoft.keyvault/
 │       └── vaults.json
-├── state_schemas.py
+├── state.py
 ├── graph.py
 ├── streamlit_app.py
 ├── utils.py
@@ -330,26 +330,24 @@ flowchart TD
 
 ## Appendix: Example Conversation Flow
 
-**User:**  
+## Example 1
+
+**User:**
 `create a storage account with the following values, name: aiteststorg01, rg: myrg, subscription: 00000000-0000-0000-0000-000000000000 and region eastus`
 
-**System/Agent Progress (as shown in UI):**
-```
-[System] Extracting intent...
-[Agent] Intent: create, Resource Type: Microsoft.Storage/storageAccounts, Provided Fields: {...}
-[System] Checking required scope fields...
-[System] Loading ARM template for Microsoft.Storage/storageAccounts...
-[System] Determining deployment scope...
-[System] Validating template parameters...
-[Agent] All required parameters are present and valid.
-[System] Deploying to Azure...
-[Agent] Deployment succeeded!
-```
+## Example 2
+
+**User:**
+`delete storage account with the following values, name: aiteststorg01, rg: myrg, subscription: 00000000-0000-0000-0000-000000000000`
+
+## Example 3
+
+**User:**
+`list all storage accounts in the rg: myrg, subscription: 00000000-0000-0000-0000-000000000000`
 
 **If missing fields:**
-```
-[System] Please provide the following required fields: resource_group_name.
-```
+
+We use LangGraph's `Interrupt` to interrupt the workflow and prompt the user for the missing fields.
 
 **All of the above messages are logged in the `messages` list and displayed in the UI.**
 
@@ -362,23 +360,27 @@ flowchart TD
 Currently, ARM templates are loaded from the local file system based on the extracted `resource_type` (e.g., `quickstarts/microsoft.storage/storageaccounts.json`).
 
 **Planned Improvement:**
+
 - Store ARM templates in a vector store (e.g., FAISS, ChromaDB) with metadata including resource type, description, and tags.
 - On intent extraction, use the resource type to query the vector store for the most relevant template, enabling fuzzy matching, semantic search, and easier extensibility.
 - This will allow for more flexible template retrieval, support for similar resource types, and easier management of a large template library.
 
 **Intended Approach:**
+
 - Index all templates in the vector store at startup or via a management script.
 - On user request, extract the resource type and use it as a query to the vector store.
 - Retrieve the best-matching template and load it into the workflow state for validation and deployment.
 
 ### 2. Proper Logging
 
-Currently, logging is handled via Python's built-in logging module and messages are appended to the in-memory state for UI display.
+Currently, logging is handled via Python's built-in logging module. We need to use LangGraph/LangChain message streaming to log all messages to the UI.
 
 **Planned Improvement:**
+
 - Implement structured logging (e.g., JSON logs) for all agent and system actions.
+- Memory and conversation history are logged to the UI.
 - Support persistent logging to disk, cloud storage, or external logging services (e.g., Azure Monitor, ELK, Datadog).
 - Include correlation IDs, timestamps, and workflow/graph context in all logs for traceability.
-- Optionally, expose logs via an API or UI for audit and debugging purposes.
+- Optionally, send telemetry logs to Azure Application Insights/Azure Monitor.
 
 ---
