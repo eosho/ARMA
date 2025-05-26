@@ -4,11 +4,11 @@ State schemas for the master graph.
 
 from typing import TypedDict, Optional, Literal, Annotated
 from pydantic import Field
-from langchain_core.messages import AnyMessage
+from langchain_core.messages import AnyMessage, HumanMessage, AIMessage
 from langgraph.graph.message import add_messages
 from langgraph.graph import MessagesState
 
-class MasterState(MessagesState):
+class ARMAState(TypedDict):
     """
     State schema for the master graph.
     """
@@ -40,4 +40,4 @@ class MasterState(MessagesState):
     deployment_status: Optional[str]
     deployment_error: Optional[str]
     deployment_result: Optional[dict]
-
+    remaining_steps: Optional[list]
