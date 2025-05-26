@@ -1,8 +1,40 @@
-# Azure Provisioning Workflow (LangGraph + LangChain)
+# Azure Resource Management Assistant (ARMA)
+
+ARMA is a modular, multi-agent assistant for Azure resource provisioning, validation, and management, built with LangGraph and LangChain.
 
 ## Overview
 
-This project implements a **modular, production-grade, multi-agent workflow** for Azure resource provisioning using [LangGraph](https://github.com/langchain-ai/langgraph) and [LangChain](https://github.com/langchain-ai/langchain). It features robust conversational state management, full message logging (user, agent, and system/progress messages), and real-time UI display of all agent progress and interactions. The system is designed for extensibility, reliability, and seamless integration with modern UIs (Gradio, Streamlit, Chainlit).
+Azure Resource Management Assistant (ARMA) provides a robust, streaming, and user-friendly workflow for managing Azure resources. It leverages a multi-agent architecture to extract user intent, validate ARM templates, and manage Azure resources, with all agent/system progress streamed to the UI.
+
+## Features
+- Modular, multi-agent workflow for Azure resource management
+- Intent extraction, template validation, deployment, and resource action agents
+- Real-time streaming of agent/system progress to the UI
+- Human-in-the-loop support for missing or ambiguous fields
+- Production-grade, extensible codebase using LangGraph and LangChain
+
+## Architecture
+ARMA is composed of several subgraphs/agents:
+- **Intent Detection Agent**: Extracts user intent and resource details
+- **Template Validation Agent**: Fetches and validates ARM templates
+- **Deployment Agent**: Handles Azure deployments
+- **Resource Action Agent**: Manages resource actions (create, update, delete, etc.)
+- **Human Node**: Prompts for missing/unclear fields
+
+All state and progress are logged for real-time UI display.
+
+## Getting Started
+
+1. Clone the repository
+2. Install dependencies from `requirements.txt`
+3. Run the main entry point (see usage examples in the codebase)
+
+## Usage
+- Interact with ARMA via the provided Streamlit or console harness
+- All agent progress and system messages are streamed to the UI
+
+## Changelog
+- Project renamed to Azure Resource Management Assistant (ARMA) and documentation updated accordingly.
 
 ---
 
