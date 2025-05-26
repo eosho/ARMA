@@ -22,9 +22,6 @@ from prompts.prompts import INTENT_EXTRACTION_SYSTEM_PROMPT
 # load environment variables
 load_dotenv()
 
-# Path to your vector store (default to ./vs_templates)
-VECTORSTORE_PATH = os.getenv("TEMPLATE_VECTORSTORE_PATH", "./vs_templates")
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
@@ -58,7 +55,7 @@ def intent_extraction_node(state: Dict[str, Any]) -> Dict[str, Any]:
         "subscription_id": result.get("subscription_id"),
         "subscription_name": result.get("subscription_name"),
         "location": result.get("location"),
-        "user_query": state["messages"][-1].content
+        "prompt": state["messages"][-1].content
     }
 
 # --- Node 2: Template Fetch ---
