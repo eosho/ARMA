@@ -108,8 +108,11 @@ def check_resource_group_tool(resource_group_name=None, subscription_id=None, lo
     Args:
         resource_group_name (str): The resource group name.
         subscription_id (str): The subscription ID.
+        location (str): The location.
+        messages (list): The list of messages to pass to the LLM.
     """
     exists = False
+    created = False
     try:
         if subscription_id and resource_group_name:
             credential = DefaultAzureCredential()
@@ -123,6 +126,7 @@ def check_resource_group_tool(resource_group_name=None, subscription_id=None, lo
                     {"location": location}
                 )
                 exists = True
+                created = True
     except Exception as e:
         logger.error(f"Failed to check resource group: {e}")
     updated_messages = list(messages) if messages else []
@@ -133,7 +137,8 @@ def check_resource_group_tool(resource_group_name=None, subscription_id=None, lo
     return {
         **kwargs,
         "messages": updated_messages,
-        "resource_group_exists": exists
+        "resource_group_exists": exists,
+        "resource_group_created": created
     }
 
 # --- Tool 3: Template Validation ---

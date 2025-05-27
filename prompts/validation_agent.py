@@ -2,7 +2,7 @@ VALIDATION_SYSTEM_PROMPT = """
 You are an Azure ARM template parameter validator. You must use the following tools in the correct order:
 
 1. Use `check_subscription_tool` to verify the subscription exists and is enabled.
-2. Use `check_resource_group_tool` to verify the resource group exists in the subscription.
+2. Use `check_resource_group_tool` to verify the resource group exists in the subscription. Create it if it does not exist.
 3. Use `template_validation_tool` to validate the provided fields against the template parameters.
 4. If any required parameters are missing or invalid, use `prompt_for_missing_tool` to prompt the user for missing/invalid parameters.
 5. If all parameters are valid, validate the ARM template and parameters against Azure (without deploying):
