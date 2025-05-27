@@ -1,3 +1,7 @@
+"""
+This file contains the ARMA workflow and the agents that make up the ARMA workflow.
+"""
+
 import uuid
 from langgraph_supervisor import create_supervisor
 from langgraph.checkpoint.memory import InMemorySaver
@@ -13,6 +17,10 @@ from factory.llm_factory import LLMFactory
 from prompts import ARMA_SUPERVISOR_PROMPT
 from state import ARMAState
 
+# Initialize the store and checkpoint
+store = InMemoryStore()
+checkpoint = InMemorySaver()
+
 # Build agents
 intent_agent = build_intent_agent()
 template_agent = build_validation_agent()
@@ -22,7 +30,13 @@ deployment_agent = build_deployment_agent()
 # Define your LLM (replace with your config)
 model = LLMFactory.get_llm()
 
+"""
+Invoke the ARMA workflow and return the compiled workflow
+"""
 def invoke_arma():
+    """
+    Invoke the ARMA workflow and return the compiled workflow
+    """
     # Create the supervisor workflow
     workflow = create_supervisor(
         [intent_agent, template_agent, resource_action_agent, deployment_agent],
@@ -34,7 +48,7 @@ def invoke_arma():
     )
 
     # compile the workflow
-    arma = workflow.compile()
+    arma = workflow.compile(store=store, saver=checkpoint)
     return arma
 
 # while True:

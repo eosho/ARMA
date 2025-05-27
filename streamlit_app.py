@@ -28,18 +28,26 @@ if "expander_open" not in st.session_state:
 
 with st.expander("Azure Resource Management Assistant (ARMA) via Natural Language"):
     st.write("""
-    This app demonstrates how to use the StreamlitCallbackHandler to stream the response from the Azure Resource Management Assistant (ARMA).
-    The app is built using the LangGraph framework and the Azure Resource Management Assistant (ARMA) is built using the LangGraph framework.
+    This app is built using the LangGraph framework and the Azure Resource Management Assistant (ARMA) is built using the LangGraph framework.
     It consists of 5 agents:
+
     - **ARMA Supervisor Agent**: Supervises the other agents and orchestrates the overall flow of the application.
     - **Intent Detection Agent**: Detects the intent of the user's request
     - **Template Validation Agent**: Validates the template based on the intent and provided fields
     - **Resource Action Agent**: Can get, list, or delete a resource
     - **Deployment Agent**: Can create or update a resource using an ARM template
     """)
+    
+    st.markdown("""
+    You can ask ARMA to:
+    - Get a resource. E.g. `Get me the storage account with the name 'testsa' in the resource group 'rg', subscription 'demo-sub'`
+    - List resources. E.g. `List all the databases in the resource group 'rg'`
+    - Delete a resource. E.g. `Delete the keyvault with the name 'testkv' in the resource group 'rg' in the subscription 'demo-sub'`
+    - Create or update a resource using an ARM template. E.g. `Create storage account 'testsa' in the resource group 'rg', subscription 'demo-sub' and region 'eastus'`
+    """)
 
 if "messages" not in st.session_state:
-    st.session_state.messages = []
+    st.session_state.messages = [AIMessage(content="How can I help you today?")]
 
 if "thread_id" not in st.session_state:
     st.session_state.thread_id = str(uuid.uuid4())
@@ -94,12 +102,12 @@ if prompt := st.chat_input("Enter a message"):
                 callbacks=[st_callback]
             )
         )
-        
+
         # get the last message from the response
         last_msg = response["messages"][-1].content
-        
+
         # Add that last message to the st_message_state
         st.session_state.messages.append(AIMessage(content=last_msg))
-        
+
         # visually refresh the complete response after the callback container
         msg_placeholder.write(last_msg)
