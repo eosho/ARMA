@@ -1,4 +1,4 @@
-<img src="./assets/images/arma_logo.png" alt="ARMA Logo" width="100" align="left"/>
+<img src="assets/images/arma_logo.png" alt="ARMA Logo" width="100" align="left"/>
 
 # Azure Resource Management Assistant (ARMA)
 
