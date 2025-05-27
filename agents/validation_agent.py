@@ -380,26 +380,23 @@ def arm_validation_subscription_tool(template=None, parameter_file_content=None,
         "validation_status": validation_status
     }
 
-# --- Build ReAct Agent ---
-"""
-This function builds the ReAct agent for template validation.
-It uses the tools defined above.
-"""
-def build_validation_agent():
-    llm = LLMFactory.get_llm()
-    tools = [
-        check_subscription_tool,
-        check_resource_group_tool,
-        template_validation_tool,
-        prompt_for_missing_tool,
-        arm_validation_resource_group_tool,
-        arm_validation_subscription_tool,
-    ]
-    agent = create_react_agent(
-        tools=tools,
-        model=llm,
-        state_schema=ARMAState,
-        prompt=VALIDATION_SYSTEM_PROMPT,
-        name="validation_agent"
-    )
-    return agent
+class ValidationAgent:
+    @staticmethod
+    def build():
+        llm = LLMFactory.get_llm()
+        tools = [
+            check_subscription_tool,
+            check_resource_group_tool,
+            template_validation_tool,
+            prompt_for_missing_tool,
+            arm_validation_resource_group_tool,
+            arm_validation_subscription_tool,
+        ]
+        agent = create_react_agent(
+            tools=tools,
+            model=llm,
+            state_schema=ARMAState,
+            prompt=VALIDATION_SYSTEM_PROMPT,
+            name="validation_agent"
+        )
+        return agent

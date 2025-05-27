@@ -214,24 +214,21 @@ def check_scope_fields_tool(resource_group_name=None, subscription_id=None, subs
         "subscription_name": subscription_name
     }
 
-# --- Build ReAct Agent ---
-"""
-This function builds the ReAct agent for intent detection.
-It uses the tools defined above.
-"""
-def build_intent_agent():
-    llm = LLMFactory.get_llm()
-    tools = [
-        extract_intent_tool,
-        check_scope_fields_tool,
-        fetch_template_tool,
-        determine_scope_tool,
-    ]
-    agent = create_react_agent(
-        tools=tools,
-        model=llm,
-        prompt=INTENT_EXTRACTION_SYSTEM_PROMPT,
-        name="intent_agent",
-        state_schema=ARMAState
-    )
-    return agent
+class IntentAgent:
+    @staticmethod
+    def build():
+        llm = LLMFactory.get_llm()
+        tools = [
+            extract_intent_tool,
+            check_scope_fields_tool,
+            fetch_template_tool,
+            determine_scope_tool,
+        ]
+        agent = create_react_agent(
+            tools=tools,
+            model=llm,
+            prompt=INTENT_EXTRACTION_SYSTEM_PROMPT,
+            name="intent_agent",
+            state_schema=ARMAState
+        )
+        return agent

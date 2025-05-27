@@ -1,11 +1,18 @@
+"""
+This file contains the Streamlit app for the ARMA workflow.
+"""
+
 import streamlit as st
 import uuid
 import asyncio
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain.schema.runnable.config import RunnableConfig
 from utils import get_streamlit_cb
-from arma import invoke_arma
+from arma import ARMAWorkflow
 
+# Initialize the ARMA workflow
+arma_workflow = ARMAWorkflow()
+arma = arma_workflow.compile_workflow()
 
 st.set_page_config(
     page_title="ARMA",
@@ -95,7 +102,7 @@ if prompt := st.chat_input("Enter a message"):
         config = {"configurable": {"thread_id": st.session_state.thread_id, "user_id": st.session_state.user_id}}
 
         # invoke the graph
-        response = invoke_arma().invoke(
+        response = arma.invoke(
             {"messages": [HumanMessage(content=prompt)]},
             config=RunnableConfig(
                 **config,

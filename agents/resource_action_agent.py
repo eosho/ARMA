@@ -208,24 +208,21 @@ def prompt_for_missing_action_tool(resource_action_error=None, messages=None, **
     updated_messages.append({"role": "system", "content": msg})
     raise interrupt(msg)
 
-# --- Build ReAct Agent ---
-"""
-This function builds the ReAct agent for resource action.
-It uses the tools defined above.
-"""
-def build_resource_action_agent():
-    llm = LLMFactory.get_llm()
-    tools = [
-        get_resource_tool,
-        list_resources_tool,
-        delete_resource_tool,
-        prompt_for_missing_action_tool,
-    ]
-    agent = create_react_agent(
-        tools=tools,
-        model=llm,
-        state_schema=ARMAState,
-        prompt=RESOURCE_ACTION_SYSTEM_PROMPT,
-        name="resource_action_agent"
-    )
-    return agent
+class ResourceActionAgent:
+    @staticmethod
+    def build():
+        llm = LLMFactory.get_llm()
+        tools = [
+            get_resource_tool,
+            list_resources_tool,
+            delete_resource_tool,
+            prompt_for_missing_action_tool,
+        ]
+        agent = create_react_agent(
+            tools=tools,
+            model=llm,
+            state_schema=ARMAState,
+            prompt=RESOURCE_ACTION_SYSTEM_PROMPT,
+            name="resource_action_agent"
+        )
+        return agent

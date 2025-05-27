@@ -167,23 +167,20 @@ def prompt_for_missing_deploy_tool(deployment_error=None, messages=None, **kwarg
     updated_messages.append({"role": "system", "content": msg})
     raise interrupt(msg)
 
-# --- Build ReAct Agent ---
-"""
-This function builds the ReAct agent for deployment.
-It uses the tools defined above.
-"""
-def build_deployment_agent():
-    llm = LLMFactory.get_llm()
-    tools = [
-        deploy_resource_group_scope_tool,
-        deploy_subscription_scope_tool,
-        prompt_for_missing_deploy_tool,
-    ]
-    agent = create_react_agent(
-        tools=tools,
-        model=llm,
-        state_schema=ARMAState,
-        prompt=DEPLOYMENT_SYSTEM_PROMPT,
-        name="deployment_agent"
-    )
-    return agent
+class DeploymentAgent:
+    @staticmethod
+    def build():
+        llm = LLMFactory.get_llm()
+        tools = [
+            deploy_resource_group_scope_tool,
+            deploy_subscription_scope_tool,
+            prompt_for_missing_deploy_tool,
+        ]
+        agent = create_react_agent(
+            tools=tools,
+            model=llm,
+            state_schema=ARMAState,
+            prompt=DEPLOYMENT_SYSTEM_PROMPT,
+            name="deployment_agent"
+        )
+        return agent
