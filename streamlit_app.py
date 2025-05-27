@@ -58,7 +58,7 @@ with st.sidebar:
   @st.dialog("Architecture")
   def architecture_dialog() -> None:
       st.image(
-          "./assets/images/architecture.png"
+          "https://github.com/eosho/ARMA/blob/main/assets/images/architecture.png?raw=true"
       )
 
   if st.button("Architecture", use_container_width=True, icon=":material/schema:"):
