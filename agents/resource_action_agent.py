@@ -82,20 +82,19 @@ def get_resource_tool(subscription_id=None, resource_group_name=None, resource_t
 
 # --- Tool 2: List Resources ---
 """
-This tool lists resources of the specified type in the given resource group.
-It uses the Azure SDK to list resources.
+This tool lists resources of the specified type in the given resource group. If resource_type is not provided, lists all resources in the resource group.
 """
 @tool
 def list_resources_tool(subscription_id=None, resource_group_name=None, resource_type=None, messages=None, **kwargs):
     """
-    Lists resources of the specified type in the given resource group.
+    Lists resources of the specified type in the given resource group. If resource_type is not provided, lists all resources in the resource group.
     
     Args:
         subscription_id (str): The subscription ID.
         resource_group_name (str): The resource group name.
-        resource_type (str): The resource type.
+        resource_type (str, optional): The resource type. If None, lists all resources.
     """
-    if not (subscription_id and resource_group_name and resource_type):
+    if not (subscription_id and resource_group_name):
         return {
             **kwargs,
             "messages": (messages or []) + [{"role": "system", "content": "Missing required fields for list operation."}],
@@ -105,13 +104,17 @@ def list_resources_tool(subscription_id=None, resource_group_name=None, resource
     try:
         credential = DefaultAzureCredential()
         client = ResourceManagementClient(credential, subscription_id)
-        namespace, type_name = resource_type.split("/", 1)
-        api_version = "2021-04-01"
-        logger.info(f"Listing resources: {resource_type} in rg={resource_group_name} sub={subscription_id}")
-        resources = client.resources.list_by_resource_group(
-            resource_group_name=resource_group_name,
-            filter=f"resourceType eq '{namespace}/{type_name}'"
-        )
+        if resource_type:
+            namespace, type_name = resource_type.split("/", 1)
+            filter_str = f"resourceType eq '{namespace}/{type_name}'"
+            resources = client.resources.list_by_resource_group(
+                resource_group_name=resource_group_name,
+                filter=filter_str
+            )
+        else:
+            resources = client.resources.list_by_resource_group(
+                resource_group_name=resource_group_name
+            )
         resource_list = [r.as_dict() if hasattr(r, "as_dict") else r for r in resources]
         return {
             **kwargs,
