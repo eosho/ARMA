@@ -1,5 +1,5 @@
 """
-This file contains the Streamlit app for the ARMA workflow.
+This file contains the Streamlit app for the ARMA agent.
 """
 
 import streamlit as st
