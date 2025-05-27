@@ -1,5 +1,6 @@
 import os
 from langchain_openai import ChatOpenAI, AzureChatOpenAI
+
 class LLMFactory:
     """
     Factory class to return a LangChain LLM instance based on environment variables.
