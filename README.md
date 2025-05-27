@@ -1,8 +1,14 @@
-<img src="assets/images/arma_logo.png" alt="ARMA Logo" width="100" align="left"/>
-
-# Azure Resource Management Assistant (ARMA)
-
-ARMA is a modular, multi-agent assistant for Azure resource provisioning, validation, and management, built with LangGraph and LangChain.
+<table>
+  <tr>
+    <td width="110">
+      <img src="assets/images/arma_logo.png" alt="ARMA Logo" width="200"/>
+    </td>
+    <td>
+      <h1>Azure Resource Management Assistant (ARMA)</h1>
+      <p>ARMA is a modular, multi-agent assistant for Azure resource provisioning, validation, and management, built with LangGraph and LangChain.</p>
+    </td>
+  </tr>
+</table>
 
 ## Overview
 
