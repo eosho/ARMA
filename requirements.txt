@@ -2,6 +2,7 @@ chainlit
 langchain
 langchain-openai
 langchain-core==0.3.60
+langgraph-supervisor
 faiss-cpu
 dotenv
 langgraph
