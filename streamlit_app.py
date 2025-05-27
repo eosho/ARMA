@@ -8,11 +8,11 @@ import asyncio
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain.schema.runnable.config import RunnableConfig
 from utils import get_streamlit_cb
-from arma import ARMAWorkflow
+from arma import ARMAAgent
 
 # Initialize the ARMA workflow
-arma_workflow = ARMAWorkflow()
-arma = arma_workflow.compile_workflow()
+arma_agent = ARMAAgent()
+arma = arma_agent.build()
 
 st.set_page_config(
     page_title="ARMA",

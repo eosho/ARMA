@@ -19,7 +19,7 @@ from factory.llm_factory import LLMFactory
 from prompts import ARMA_SUPERVISOR_PROMPT
 from state import ARMAState
 
-class ARMAWorkflow:
+class ARMAAgent:
     """
     Encapsulates the ARMA workflow, including agent, LLM, prompt, state, store, and checkpoint initialization.
     Provides a method to compile and return the workflow.
@@ -37,9 +37,9 @@ class ARMAWorkflow:
         verbose: bool = True
     ):
         """
-        Initialize the ARMAWorkflow with optional custom configuration.
+        Initialize the ARMAAgent with optional custom configuration.
         """
-        self.logger = logging.getLogger("arma.ARMAWorkflow")
+        self.logger = logging.getLogger("arma.ARMAAgent")
         self.verbose = verbose
         self.supervisor_name = supervisor_name
         self.output_mode = output_mode
@@ -50,7 +50,7 @@ class ARMAWorkflow:
         self.prompt = prompt or self._init_prompt()
         self.state_schema = state_schema or self._init_state_schema()
         if self.verbose:
-            self.logger.info("ARMAWorkflow initialized.")
+            self.logger.info("ARMAAgent initialized.")
 
     def _init_agents(self) -> List[Any]:
         """Initialize and return the default list of agents."""
@@ -87,21 +87,22 @@ class ARMAWorkflow:
             self.logger.info("Using default in-memory store.")
         return InMemoryStore()
 
+
     def _init_checkpoint(self) -> Any:
         """Return the default in-memory checkpoint saver."""
         if self.verbose:
             self.logger.info("Using default in-memory checkpoint saver.")
         return InMemorySaver()
 
-    def compile_workflow(self) -> Any:
+    def build(self) -> Any:
         """
-        Create and compile the ARMA supervisor workflow with the current configuration.
-        Returns the compiled workflow.
+        Create and compile the ARMA supervisor agent with the current configuration.
+        Returns the compiled agent.
         """
         try:
             if self.verbose:
-                self.logger.info("Creating supervisor workflow...")
-            workflow = create_supervisor(
+                self.logger.info("Creating supervisor agent...")
+            agent = create_supervisor(
                 self.agents,
                 model=self.model,
                 prompt=self.prompt,
@@ -110,18 +111,18 @@ class ARMAWorkflow:
                 output_mode=self.output_mode
             )
             if self.verbose:
-                self.logger.info("Compiling workflow...")
-            arma = workflow.compile(store=self.store, checkpointer=self.checkpoint)
+                self.logger.info("Compiling agent...")
+            arma = agent.compile(store=self.store, checkpointer=self.checkpoint)
             if self.verbose:
-                self.logger.info("ARMA workflow compiled successfully.")
+                self.logger.info("ARMA agent compiled successfully.")
             return arma
         except Exception as e:
-            self.logger.error(f"Failed to create or compile ARMA workflow: {e}")
+            self.logger.error(f"Failed to create or compile ARMA agent: {e}")
             raise
 
 # Example usage:
-# workflow = ARMAWorkflow()
-# arma = workflow.compile_workflow()
+# agent = ARMAAgent()
+# arma = agent.build()
 
 # while True:
 #     if __name__ == "__main__":
