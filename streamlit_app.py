@@ -6,16 +6,27 @@ from langchain.schema.runnable.config import RunnableConfig
 from utils import get_streamlit_cb
 from arma import invoke_arma
 
-APP_ICON = "🤖"
-APP_TITLE = f"{APP_ICON} ARMA"
 
-st.title(APP_TITLE)
+st.set_page_config(
+    page_title="ARMA",
+    page_icon="assets/images/arma_logo.png",
+    initial_sidebar_state="expanded",
+    menu_items={
+        'About': "### Visit [https://github.com/eosho/ARMA](https://github.com/eosho/ARMA) for more information!"
+    }
+)
+
+col1, col2 = st.columns([1, 5])
+with col1:
+    st.image("assets/images/arma_logo.png")
+with col2:
+    st.markdown("<h1 style='margin-top: 10px;'>ARMA</h1>", unsafe_allow_html=True)
 
 # Initialize the expander state
 if "expander_open" not in st.session_state:
     st.session_state.expander_open = True
 
-with st.expander("Azure Resource Management Assistant (ARMA) via Natural Language", expanded=True):
+with st.expander("Azure Resource Management Assistant (ARMA) via Natural Language"):
     st.write("""
     This app demonstrates how to use the StreamlitCallbackHandler to stream the response from the Azure Resource Management Assistant (ARMA).
     The app is built using the LangGraph framework and the Azure Resource Management Assistant (ARMA) is built using the LangGraph framework.
@@ -47,7 +58,7 @@ with st.sidebar:
   @st.dialog("Architecture")
   def architecture_dialog() -> None:
       st.image(
-          "https://github.com/JoshuaC215/agent-service-toolkit/blob/main/media/agent_architecture.png?raw=true"
+          "./assets/images/architecture.png"
       )
 
   if st.button("Architecture", use_container_width=True, icon=":material/schema:"):
