@@ -371,6 +371,11 @@ flowchart TD
 **User:**
 `list all storage accounts in the rg: myrg, subscription: 00000000-0000-0000-0000-000000000000`
 
+## Example 4
+
+**User:**
+`get key vault named mykeyvault in resource group myrg, subscription e98a7bdd-1e97-452c-939c-4edf569d31f6`
+
 **If missing fields:**
 
 We use LangGraph's `Interrupt` to interrupt the workflow and prompt the user for the missing fields.
@@ -381,7 +386,11 @@ We use LangGraph's `Interrupt` to interrupt the workflow and prompt the user for
 
 ## Work In Progress (WIP)
 
-### 1. Loading Templates from a Vector Store
+### 1. Multi-turn conversations
+
+Currently, ARMA is designed for single-turn conversations. It will be extended to support multi-turn conversations in the future.
+
+### 2. Loading Templates from a Vector Store
 
 Currently, ARM templates are loaded from the local file system based on the extracted `resource_type` (e.g., `quickstarts/microsoft.storage/storageaccounts.json`).
 
@@ -397,7 +406,7 @@ Currently, ARM templates are loaded from the local file system based on the extr
 - On user request, extract the resource type and use it as a query to the vector store.
 - Retrieve the best-matching template and load it into the workflow state for validation and deployment.
 
-### 2. Notification Agent
+### 3. Notification Agent
 
 - Add a notification agent that sends a notification to the user when deployment is complete. It will contain deployment details.
 - This will allow for more flexible notification, support for different notification types (e.g., email, SMS, Azure DevOps, Teams), and easier management of a large notification library.
