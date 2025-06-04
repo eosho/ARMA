@@ -8,7 +8,6 @@ from typing import List, Optional, Any
 from langgraph_supervisor import create_supervisor
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.store.memory import InMemoryStore
-from langchain_core.runnables import RunnableConfig
 from agents import (
   IntentAgent,
   ValidationAgent,
@@ -18,6 +17,13 @@ from agents import (
 from factory.llm_factory import LLMFactory
 from prompts import ARMA_SUPERVISOR_PROMPT
 from state import ARMAState
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 class ARMAAgent:
     """
@@ -34,13 +40,10 @@ class ARMAAgent:
         output_mode: str = "full_history",
         store: Optional[Any] = None,
         checkpoint: Optional[Any] = None,
-        verbose: bool = True
     ):
         """
         Initialize the ARMAAgent with optional custom configuration.
         """
-        self.logger = logging.getLogger("arma.ARMAAgent")
-        self.verbose = verbose
         self.supervisor_name = supervisor_name
         self.output_mode = output_mode
         self.store = store or self._init_store()
@@ -49,13 +52,9 @@ class ARMAAgent:
         self.model = model or self._init_llm()
         self.prompt = prompt or self._init_prompt()
         self.state_schema = state_schema or self._init_state_schema()
-        if self.verbose:
-            self.logger.info("ARMAAgent initialized.")
 
     def _init_agents(self) -> List[Any]:
         """Initialize and return the default list of agents."""
-        if self.verbose:
-            self.logger.info("Initializing default agents...")
         return [
             IntentAgent.build(),
             ValidationAgent.build(),
@@ -65,33 +64,23 @@ class ARMAAgent:
 
     def _init_llm(self) -> Any:
         """Initialize and return the default LLM/model."""
-        if self.verbose:
-            self.logger.info("Initializing default LLM/model...")
         return LLMFactory.get_llm()
 
     def _init_prompt(self) -> str:
         """Return the default supervisor prompt."""
-        if self.verbose:
-            self.logger.info("Using default supervisor prompt.")
         return ARMA_SUPERVISOR_PROMPT
 
     def _init_state_schema(self) -> Any:
         """Return the default state schema."""
-        if self.verbose:
-            self.logger.info("Using default state schema.")
         return ARMAState
 
     def _init_store(self) -> Any:
         """Return the default in-memory store."""
-        if self.verbose:
-            self.logger.info("Using default in-memory store.")
         return InMemoryStore()
 
 
     def _init_checkpoint(self) -> Any:
         """Return the default in-memory checkpoint saver."""
-        if self.verbose:
-            self.logger.info("Using default in-memory checkpoint saver.")
         return InMemorySaver()
 
     def build(self) -> Any:
@@ -100,8 +89,6 @@ class ARMAAgent:
         Returns the compiled agent.
         """
         try:
-            if self.verbose:
-                self.logger.info("Creating supervisor agent...")
             agent = create_supervisor(
                 self.agents,
                 model=self.model,
@@ -110,14 +97,10 @@ class ARMAAgent:
                 state_schema=self.state_schema,
                 output_mode=self.output_mode
             )
-            if self.verbose:
-                self.logger.info("Compiling agent...")
-            arma = agent.compile(store=self.store, checkpointer=self.checkpoint)
-            if self.verbose:
-                self.logger.info("ARMA agent compiled successfully.")
+            arma = agent.compile(name="arma", store=self.store, checkpointer=self.checkpoint)
             return arma
         except Exception as e:
-            self.logger.error(f"Failed to create or compile ARMA agent: {e}")
+            logger.error(f"Failed to create or compile ARMA agent: {e}")
             raise
 
 # Example usage:

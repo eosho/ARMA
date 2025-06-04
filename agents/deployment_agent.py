@@ -9,10 +9,11 @@ import json
 from datetime import datetime
 from langgraph.prebuilt import create_react_agent
 from state import ARMAState
-from azure.identity import DefaultAzureCredential
-from azure.mgmt.resource import ResourceManagementClient
 from langgraph.types import interrupt
-from factory.llm_factory import LLMFactory
+from factory import (
+    LLMFactory,
+    config
+)
 from langchain_core.tools import tool
 from prompts import DEPLOYMENT_SYSTEM_PROMPT
 
@@ -50,8 +51,7 @@ def deploy_resource_group_scope_tool(subscription_id=None, resource_group_name=N
             "deployment_error": "Missing required fields for resource group deployment."
         }
     try:
-        credential = DefaultAzureCredential()
-        client = ResourceManagementClient(credential, subscription_id)
+        client = config.get_resource_management_client(subscription_id)
         deployment_name = f"ai-deployment-{datetime.now().strftime('%Y%m%d%H%M%S')}"
         t = template
         if isinstance(t, str):
@@ -112,8 +112,7 @@ def deploy_subscription_scope_tool(subscription_id=None, template=None, paramete
             "deployment_error": "Missing required fields for subscription deployment."
         }
     try:
-        credential = DefaultAzureCredential()
-        client = ResourceManagementClient(credential, subscription_id)
+        client = config.get_resource_management_client(subscription_id)
         deployment_name = f"ai-deployment-{datetime.now().strftime('%Y%m%d%H%M%S')}"
         t = template
         if isinstance(t, str):

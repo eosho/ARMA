@@ -11,3 +11,5 @@ langchain-community
 langchain-chroma
 azure-identity
 azure-mgmt-resource
+httpx==0.28.0
+azure-cosmos==4.17.0

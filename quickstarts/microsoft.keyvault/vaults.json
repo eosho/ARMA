@@ -25,13 +25,6 @@
       "metadata": {
         "description": "The SKU of the Key Vault."
       }
-    },
-    "tenantId": {
-      "type": "string",
-      "defaultValue": "[subscription().tenantId]",
-      "metadata": {
-        "description": "Azure AD tenant ID for the Key Vault."
-      }
     }
   },
   "resources": [
@@ -41,7 +34,7 @@
       "name": "[parameters('name')]",
       "location": "[parameters('location')]",
       "properties": {
-        "tenantId": "[parameters('tenantId')]",
+        "tenantId": "[subscription().tenantId]",
         "sku": {
           "family": "A",
           "name": "[parameters('skuName')]"

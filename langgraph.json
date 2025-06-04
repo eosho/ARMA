@@ -1,7 +1,8 @@
 {
+  "python_version": "3.11",
   "dependencies": ["."],
   "graphs": {
-    "agent": "./arma.py:invoke_arma"
+    "arma": "./arma.py:invoke_arma"
   },
   "env": ".env"
 }

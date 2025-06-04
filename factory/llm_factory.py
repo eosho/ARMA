@@ -1,6 +1,6 @@
 import os
-from langchain_openai import ChatOpenAI, AzureChatOpenAI
-
+from typing import Literal
+from .config import config
 class LLMFactory:
     """
     Factory class to return a LangChain LLM instance based on environment variables.
@@ -9,35 +9,21 @@ class LLMFactory:
         self.llm = self.get_llm()
 
     @staticmethod
-    def get_llm():
+    def get_llm(provider: Literal["openai", "azure"] = "azure"):
         """
         Factory function to return a LangChain LLM instance based on environment variables.
         Supports 'openai' and 'azure' as LLM providers.
         
-        Set LLM_PROVIDER to 'openai' or 'azure' in your environment.
+        It uses the config.py file to get the LLM client.
+
+        Args:
+            provider (str): The LLM provider to use.
+        Returns:
+            A LangChain LLM instance of the specified provider.
         """
-        provider = os.environ.get("LLM_PROVIDER", "azure").lower()
         if provider == "openai":
-            api_key = os.environ.get("OPENAI_API_KEY")
-            if not api_key:
-                raise ValueError("OPENAI_API_KEY must be set for OpenAI provider.")
-            return ChatOpenAI(
-                openai_api_key=api_key
-            )
+            return config.get_openai_client()
         elif provider == "azure":
-            api_key = os.environ.get("AZURE_OPENAI_API_KEY")
-            endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
-            deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
-            api_version = os.environ.get("AZURE_OPENAI_API_VERSION")
-            if not all([api_key, endpoint, deployment, api_version]):
-                raise ValueError("AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT, and AZURE_OPENAI_API_VERSION must be set for Azure provider.")
-            return AzureChatOpenAI(
-                azure_deployment=deployment,
-                api_version=api_version,
-                api_key=api_key,
-                model_name=deployment,
-                azure_endpoint=endpoint,
-                streaming=True,
-            )
+            return config.get_azure_openai_client()
         else:
             raise ValueError(f"Unsupported LLM_PROVIDER: {provider}")

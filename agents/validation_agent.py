@@ -10,10 +10,11 @@ from datetime import datetime
 from langgraph.prebuilt import create_react_agent
 from state import ARMAState
 from dotenv import load_dotenv
-from azure.identity import DefaultAzureCredential
-from azure.mgmt.resource import ResourceManagementClient, SubscriptionClient
 from langgraph.types import interrupt
-from factory.llm_factory import LLMFactory
+from factory import (
+    LLMFactory,
+    config
+)
 from prompts import VALIDATION_SYSTEM_PROMPT
 from langchain_core.tools import tool
 
@@ -56,8 +57,7 @@ def check_subscription_tool(subscription_id=None, subscription_name=None, messag
     found_name = subscription_name
     mismatch = False
     try:
-        credential = DefaultAzureCredential()
-        sub_client = SubscriptionClient(credential)
+        sub_client = config.get_resource_management_subscription_client()
         for sub in sub_client.subscriptions.list():
             # Normalize for comparison
             sub_id = sub.subscription_id
@@ -115,8 +115,7 @@ def check_resource_group_tool(resource_group_name=None, subscription_id=None, lo
     created = False
     try:
         if subscription_id and resource_group_name:
-            credential = DefaultAzureCredential()
-            rg_client = ResourceManagementClient(credential, subscription_id)
+            rg_client = config.get_resource_management_client(subscription_id)
             exists = rg_client.resource_groups.check_existence(resource_group_name)
             
             # Lets create the resource group if it doesn't exist. Why not?
@@ -270,7 +269,6 @@ def arm_validation_resource_group_tool(template=None, parameter_file_content=Non
         **kwargs: Additional keyword arguments.
     """
     logger.info(f"[arm_validation_resource_group_tool] Template: {template}")
-    credential = DefaultAzureCredential()
     validation_result = None
     validation_error = None
     validation_status = None
@@ -281,7 +279,7 @@ def arm_validation_resource_group_tool(template=None, parameter_file_content=Non
         if not t.get('$schema'):
             raise ValueError("Template missing $schema property")
         parameters = (parameter_file_content or {}).get("parameters", {})
-        client = ResourceManagementClient(credential, subscription_id)
+        client = config.get_resource_management_client(subscription_id)
         if not resource_group_name:
             validation_error = "No resource group specified for validation."
         else:
@@ -339,7 +337,6 @@ def arm_validation_subscription_tool(template=None, parameter_file_content=None,
         **kwargs: Additional keyword arguments.
     """
     logger.info(f"[arm_validation_subscription_tool] Template: {template}")
-    credential = DefaultAzureCredential()
     validation_result = None
     validation_error = None
     validation_status = None
@@ -350,7 +347,7 @@ def arm_validation_subscription_tool(template=None, parameter_file_content=None,
         if not t.get('$schema'):
             raise ValueError("Template missing $schema property")
         parameters = (parameter_file_content or {}).get("parameters", {})
-        client = ResourceManagementClient(credential, subscription_id)
+        client = config.get_resource_management_client(subscription_id)
         poller = client.deployments.begin_validate_at_subscription_scope(
             deployment_name,
             {

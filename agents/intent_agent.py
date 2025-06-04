@@ -8,12 +8,12 @@ from typing import Dict, Any
 from langgraph.prebuilt import create_react_agent
 from langgraph.types import interrupt
 from state import ARMAState
-from langchain_community.vectorstores import FAISS
-from langchain_openai import AzureOpenAIEmbeddings
-from langchain.schema import Document
 import os
 from dotenv import load_dotenv
-from factory.llm_factory import LLMFactory
+from factory import (
+    LLMFactory,
+    config
+)
 from prompts import INTENT_EXTRACTION_SYSTEM_PROMPT
 import json
 from langchain_core.tools import tool
@@ -188,6 +188,11 @@ def check_scope_fields_tool(resource_group_name=None, subscription_id=None, subs
         **kwargs: Additional keyword arguments.
     """
     missing = []
+    
+    # Check if subscription_id is present in .env
+    if not subscription_id:
+        subscription_id = config.AZURE_SUBSCRIPTION_ID
+
     if not resource_group_name:
         missing.append("resource_group_name")
     if not (subscription_id or subscription_name):

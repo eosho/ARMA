@@ -7,10 +7,11 @@ import logging
 import json
 from langgraph.prebuilt import create_react_agent
 from state import ARMAState
-from azure.identity import DefaultAzureCredential
-from azure.mgmt.resource import ResourceManagementClient
 from langgraph.types import interrupt
-from factory.llm_factory import LLMFactory
+from factory import (
+    LLMFactory,
+    config
+)
 from langchain_core.tools import tool
 from prompts import RESOURCE_ACTION_SYSTEM_PROMPT
 
@@ -50,8 +51,7 @@ def get_resource_tool(subscription_id=None, resource_group_name=None, resource_t
             "resource_action_error": "Missing required fields for get operation."
         }
     try:
-        credential = DefaultAzureCredential()
-        client = ResourceManagementClient(credential, subscription_id)
+        client = config.get_resource_management_client(subscription_id)
         namespace, type_name = resource_type.split("/", 1)
         api_version = "2021-04-01"
         logger.info(f"Getting resource: {resource_type} name={resource_name} rg={resource_group_name} sub={subscription_id}")
@@ -102,8 +102,7 @@ def list_resources_tool(subscription_id=None, resource_group_name=None, resource
             "resource_action_error": "Missing required fields for list operation."
         }
     try:
-        credential = DefaultAzureCredential()
-        client = ResourceManagementClient(credential, subscription_id)
+        client = config.get_resource_management_client(subscription_id)
         if resource_type:
             namespace, type_name = resource_type.split("/", 1)
             filter_str = f"resourceType eq '{namespace}/{type_name}'"
@@ -156,8 +155,7 @@ def delete_resource_tool(subscription_id=None, resource_group_name=None, resourc
             "resource_action_error": "Missing required fields for delete operation."
         }
     try:
-        credential = DefaultAzureCredential()
-        client = ResourceManagementClient(credential, subscription_id)
+        client = config.get_resource_management_client(subscription_id)
         namespace, type_name = resource_type.split("/", 1)
         api_version = "2021-04-01"
         logger.info(f"Deleting resource: {resource_type} name={resource_name} rg={resource_group_name} sub={subscription_id}")
