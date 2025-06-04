@@ -57,7 +57,7 @@ def check_subscription_tool(subscription_id=None, subscription_name=None, messag
     found_name = subscription_name
     mismatch = False
     try:
-        sub_client = config.get_resource_management_subscription_client()
+        sub_client = config.get_resource_management_client()
         for sub in sub_client.subscriptions.list():
             # Normalize for comparison
             sub_id = sub.subscription_id

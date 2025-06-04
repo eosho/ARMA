@@ -96,22 +96,19 @@ class AppConfig:
         except Exception as exc:
             logging.warning("Failed to create DefaultAzureCredential: %s", exc)
             return None
-        
-    def get_resource_management_subscription_client(self):
-        """Get a Resource Management client for the configured subscription.
 
+    def get_resource_management_client(self, subscription_id: str = None):
+        """Get a Resource Management client for the configured subscription or resource group.
+
+        Args:
+            subscription_id: The subscription ID to use for the Resource Management client.
         Returns:
             A Resource Management client
         """
-        return SubscriptionClient(self.get_azure_credentials())
-    
-    def get_resource_management_client(self, subscription_id: str):
-        """Get a Resource Management client for the configured resource group.
-
-        Returns:
-            A Resource Management client
-        """
-        return ResourceManagementClient(self.get_azure_credentials(), subscription_id)
+        if subscription_id:
+            return ResourceManagementClient(self.get_azure_credentials(), subscription_id)
+        else:
+            return SubscriptionClient(self.get_azure_credentials())
 
     # def get_cosmos_database_client(self):
     #     """Get a Cosmos DB client for the configured database.
