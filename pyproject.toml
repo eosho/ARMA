@@ -1,0 +1,242 @@
+[project]
+name = "arma"
+version = "2.0.0"
+description = "ARMA (Azure Resource Management Assistant) - Multi-agent system for Azure resource management"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "ARMA Team", email = "arma@example.com" }
+]
+keywords = ["azure", "devops", "infrastructure", "langchain", "langgraph", "agents"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    # API Framework
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.6.0",
+
+    # LangChain & LangGraph
+    "langchain>=1.0.5",
+    "langchain-openai>=1.0.2",
+    "langchain-core>=1.0.4",
+    "langgraph>=1.0.2",
+    "langsmith>=0.2.0",
+
+    # CLI
+    "typer>=0.20.0",
+    "rich>=13.9.0",
+    "click>=8.1.0",
+
+    # Utilities
+    "python-dotenv>=1.0.0",
+    "httpx>=0.27.0",
+    "pyyaml>=6.0.0",
+    "jinja2>=3.1.0",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=5.0.0",
+    "pytest-mock>=3.14.0",
+    "httpx>=0.27.0",
+    "faker>=30.0.0",
+    "black>=24.0.0",
+    "ruff>=0.6.0",
+    "mypy>=1.11.0",
+    "pre-commit>=3.8.0",
+    "poethepoet==0.37.0",
+    "langgraph-cli[inmem]>=0.1.61"
+]
+
+docs = [
+    "mkdocs>=1.6.0",
+    "mkdocs-material>=9.5.0",
+    "mkdocstrings[python]>=0.26.0",
+]
+
+[project.scripts]
+arma = "arma.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/eosho/arma"
+Documentation = "https://arma.readthedocs.io"
+Repository = "https://github.com/eosho/arma"
+Issues = "https://github.com/eosho/arma/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/arma"]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=5.0.0",
+    "pytest-mock>=3.14.0",
+    "httpx>=0.27.0",
+    "faker>=30.0.0",
+    "black>=24.0.0",
+    "ruff>=0.6.0",
+    "mypy>=1.11.0",
+    "pre-commit>=3.8.0",
+]
+
+[tool.poe.tasks]
+# Development tasks
+dev-agent = "uv run python src/arma/cli.py"
+
+# Testing tasks
+test = "pytest tests/ -v"
+test-unit = "pytest tests/unit/ -v"
+test-integration = "pytest tests/integration/ -v"
+test-cov = "pytest tests/ --cov=arma --cov-report=html --cov-report=term"
+test-watch = "pytest-watch tests/ -v"
+
+# Code quality tasks
+format = "black src/ tests/"
+format-check = "black src/ tests/ --check"
+lint = "ruff check src/ tests/"
+lint-fix = "ruff check src/ tests/ --fix"
+typecheck = "mypy src/"
+quality = ["format", "lint", "typecheck"]
+
+# Setup tasks
+setup = ["install-deps", "setup-env"]
+install-deps = "uv sync"
+setup-env = { script = "scripts.setup:create_env_file" }
+
+# Build and deployment tasks
+build = "uv build"
+clean = { shell = "rm -rf dist/ build/ *.egg-info .pytest_cache .coverage htmlcov/" }
+
+# Documentation tasks
+docs-serve = "mkdocs serve"
+docs-build = "mkdocs build"
+docs-deploy = "mkdocs gh-deploy"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--showlocals",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "ARG", # flake8-unused-arguments
+    "SIM", # flake8-simplify
+]
+ignore = [
+    "E501",  # line too long (handled by black)
+    "B008",  # do not perform function calls in argument defaults
+    "B904",  # Allow raising exceptions without from e
+    "ARG002",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # Allow unused imports in __init__.py
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = false
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+follow_imports = "normal"
+strict_optional = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = [
+    "langchain.*",
+    "langgraph.*",
+    "streamlit.*",
+]
+ignore_missing_imports = true
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
