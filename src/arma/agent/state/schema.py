@@ -135,6 +135,16 @@ class ARMAAgentState(AgentState):
     what_if_results: NotRequired[WhatIfResultsDict]
     """Azure what-if deployment preview results."""
 
+    # === Policy Compliance ===
+    policy_check_status: NotRequired[str]
+    """Status of policy compliance check: completed, error, or skipped."""
+
+    policy_violations: NotRequired[list[dict[str, Any]]]
+    """List of Azure Policy violations that would block deployment."""
+
+    policy_warnings: NotRequired[list[dict[str, Any]]]
+    """List of Azure Policy warnings (Audit policies)."""
+
     # === Execution ===
     deployment_status: NotRequired[DeploymentStatus]
     """Current deployment execution status."""

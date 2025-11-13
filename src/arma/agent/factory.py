@@ -12,6 +12,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from arma.agent.llm.registry import get_llm
 from arma.agent.middleware import (
+    AzurePolicyComplianceMiddleware,
     ConversationSummaryMiddleware,
     PreflightMiddleware,
     TaggingMiddleware,
@@ -97,6 +98,13 @@ class ARMAAgentFactory:
         return [
             deployment_prompt,
             PreflightMiddleware(),
+            AzurePolicyComplianceMiddleware(
+                check_on_execute=True,
+                block_on_violations=True,
+                fail_on_policy_error=False,
+                include_warnings=True,
+                skip_what_if=True,
+            ),
             TodoListMiddleware(
                 system_prompt="For complex Azure deployments, use write_todos to break down steps: analyze, plan, validate, execute"
             ),
