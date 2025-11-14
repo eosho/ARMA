@@ -100,6 +100,8 @@ dev-dependencies = [
 [tool.poe.tasks]
 # Development tasks
 dev-agent = "uv run python src/arma/cli.py"
+dev-api = "uvicorn arma.api.main:app --reload --host 0.0.0.0 --port 8000"
+dev-api-prod = "uvicorn arma.api.main:app --host 0.0.0.0 --port 8000 --workers 4"
 
 # Testing tasks
 test = "pytest tests/ -v"
