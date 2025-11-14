@@ -14,7 +14,7 @@ from pathlib import Path
 def get_version() -> str:
     """Return version string from pyproject.toml (e.g., '0.1.1')."""
 
-    pyproject_path = Path(__file__).resolve().parent.parent / "pyproject.toml"
+    pyproject_path = Path(__file__).resolve().parent.parent.parent / "pyproject.toml"
     with open(pyproject_path, "rb") as f:
         data: dict[str, object] = tomllib.load(f)
 
@@ -29,4 +29,4 @@ def get_version() -> str:
     return version
 
 
-__version__ = get_version()
+arma_version = get_version()

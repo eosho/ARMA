@@ -60,7 +60,7 @@ class ConversationSummaryMiddleware(AgentMiddleware):
         if len(messages) <= self.max_messages:
             return None
 
-        logger.info(
+        logger.debug(
             f"[ConversationSummary] Trimming from {len(messages)} to {self.max_messages} messages"
         )
 

@@ -49,10 +49,7 @@ class TemplateDiscoveryMiddleware(AgentMiddleware):
         request: ToolCallRequest,
         handler: Callable,
     ) -> ToolMessage | Command:
-        """Async version of wrap_tool_call - wraps check_existing_resource tool calls.
-
-        See wrap_tool_call for full documentation.
-        """
+        """Async tool that wraps check_existing_resource tool calls."""
         # Get tool name and args
         tool_name = request.tool_call.get("name", "")
         tool_args = request.tool_call.get("args", {})
@@ -60,9 +57,7 @@ class TemplateDiscoveryMiddleware(AgentMiddleware):
         # Execute the tool
         result = await handler(request)
 
-        logger.debug(f"TemplateDiscoveryMiddleware.awrap_tool_call: tool='{tool_name}'")
-
-        # Only process check_existing_resource
+        # Only process check_existing_resource tool
         if tool_name != "check_existing_resource":
             logger.debug(f"Skipping template discovery - tool is '{tool_name}'")
             return result
@@ -77,7 +72,7 @@ class TemplateDiscoveryMiddleware(AgentMiddleware):
             logger.debug("No resource_type in tool args - skipping template discovery")
             return result
 
-        logger.info(f"Discovering template for resource type: {resource_type}")
+        logger.debug(f"Discovering template for resource type: {resource_type}")
         logger.debug(f"Current state keys: {list(state.keys())}")
 
         # Check if template already discovered for this resource type
@@ -85,45 +80,10 @@ class TemplateDiscoveryMiddleware(AgentMiddleware):
         current_resource_type = state.get("resource_type")
 
         if current_template and current_resource_type == resource_type:
-            logger.info(
+            logger.debug(
                 f"Template already discovered for {resource_type}: {current_template} - "
                 "enriching result with template info"
             )
-
-            # Enrich the tool result with template information
-            if isinstance(result, ToolMessage):
-                try:
-                    original_content: dict[str, Any] = {}
-
-                    # Parse existing content
-                    if isinstance(result.content, str):
-                        try:
-                            original_content = json.loads(result.content)
-                        except json.JSONDecodeError:
-                            # Plain text, create new dict
-                            original_content = {"message": result.content}
-                    elif isinstance(result.content, dict):
-                        original_content = dict(result.content)
-
-                    # Add template information
-                    deployment_scope = state.get("deployment_scope")
-                    template_parameters = state.get("template_parameters", [])
-                    required_params = [p for p in template_parameters if p.get("required", False)]
-
-                    original_content["template_available"] = True
-                    original_content["template_path"] = current_template
-                    original_content["deployment_scope"] = deployment_scope
-                    original_content["required_parameters"] = [p["name"] for p in required_params]
-
-                    result = ToolMessage(
-                        content=json.dumps(original_content),
-                        tool_call_id=result.tool_call_id,
-                    )
-                    logger.debug("Enriched result with existing template information")
-                except (AttributeError, TypeError) as e:
-                    logger.debug(f"Could not enrich result: {e}")
-
-            return result
 
         try:
             # Find template
@@ -155,24 +115,17 @@ class TemplateDiscoveryMiddleware(AgentMiddleware):
                     }
                 )
 
-            logger.info(f"Template found: {template_path}")
+            logger.debug(f"Template found: {template_path}")
 
             # Get template information
             deployment_scope = get_template_scope(template_path)
             parameters = get_template_parameters(template_path)
             required_params = [p for p in parameters if p.get("required", False)]
 
-            logger.info(
+            logger.debug(
                 f"Template info: scope={deployment_scope}, "
                 f"params={len(parameters)}, required={len(required_params)}"
             )
-
-            # Update state with template info
-            state["resource_type"] = resource_type
-            state["template_path"] = template_path
-            state["deployment_scope"] = deployment_scope
-            state["template_parameters"] = parameters
-            state["template_discovery_status"] = "completed"
 
             # Modify the tool result to inform the LLM about template availability
             if isinstance(result, ToolMessage):
@@ -215,7 +168,7 @@ class TemplateDiscoveryMiddleware(AgentMiddleware):
                 except (json.JSONDecodeError, AttributeError, TypeError) as e:
                     logger.debug(f"Could not modify tool result: {e}")
 
-            logger.info("Template discovery completed successfully")
+            logger.debug("Template discovery completed successfully")
 
             # Extract messages properly based on result type
             if isinstance(result, ToolMessage):

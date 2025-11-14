@@ -69,7 +69,10 @@ async def run_what_if_deployment(
                     "--parameters",
                     params_file,
                     "--result-format",
-                    "ResourceIdOnly",
+                    "FullResourcePayloads",
+                    "--no-pretty-print",
+                    "--output",
+                    "json",
                 ]
             elif deployment_scope == "subscription":
                 # Run az deployment sub what-if
@@ -87,7 +90,10 @@ async def run_what_if_deployment(
                     "--parameters",
                     params_file,
                     "--result-format",
-                    "ResourceIdOnly",
+                    "FullResourcePayloads",
+                    "--no-pretty-print",
+                    "--output",
+                    "json",
                 ]
             elif deployment_scope == "managementGroup":
                 raise ValueError("Management group deployment scope is not yet supported")
@@ -96,9 +102,18 @@ async def run_what_if_deployment(
             else:
                 raise ValueError(f"Invalid deployment scope: {deployment_scope}")
 
-            subprocess.run(cmd, capture_output=True, text=True, check=True)
+            # Run command and capture output
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
 
-            return {"status": "succeeded", "changes": []}
+            # Parse JSON output
+            what_if_output = json.loads(result.stdout)
+
+            # Return what-if results with changes
+            return {
+                "status": "succeeded",
+                "changes": what_if_output.get("changes", []),
+                "error": what_if_output.get("error"),
+            }
 
         finally:
             # Clean up temp files
@@ -106,9 +121,14 @@ async def run_what_if_deployment(
             os.unlink(params_file)
 
     except subprocess.CalledProcessError as e:
-        logger.error(f"What-if command failed: {e.stderr}")
-        # Return empty result if what-if fails
-        return {"status": "failed", "changes": []}
+        return {
+            "status": "failed",
+            "changes": [],
+            "error": e.stderr,
+        }
     except Exception as e:
-        logger.error(f"What-if operation failed: {e}")
-        return {"status": "failed", "changes": []}
+        return {
+            "status": "failed",
+            "changes": [],
+            "error": f"What-if operation failed: {str(e)}",
+        }

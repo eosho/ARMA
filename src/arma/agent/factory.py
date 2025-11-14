@@ -7,9 +7,10 @@ from langchain.agents.middleware import (
     TodoListMiddleware,
     dynamic_prompt,
 )
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph.state import CompiledStateGraph
 
+from arma.agent.checkpointer import CheckpointerFactory
 from arma.agent.llm.registry import get_llm
 from arma.agent.middleware import (
     ConversationSummaryMiddleware,
@@ -20,6 +21,8 @@ from arma.agent.middleware import (
 )
 from arma.agent.state import ARMAAgentState
 from arma.agent.tools import (
+    check_existing_resource,
+    create_resource_group,
     delete_resource,
     execute_deployment,
     get_arma_version,
@@ -37,6 +40,21 @@ from .prompt import ARMA_SYSTEM_PROMPT
 class ARMAAgentFactory:
     """Factory for creating Azure Resource Management Assistant agents."""
 
+    def __init__(
+        self,
+        checkpointer: BaseCheckpointSaver | None = None,
+    ):
+        """Initialize factory.
+
+        Args:
+            checkpointer: Optional explicit checkpointer instance
+        """
+        # Use explicit checkpointer or default to memory
+        if checkpointer:
+            self.checkpointer = checkpointer
+        else:
+            self.checkpointer = CheckpointerFactory.create_memory()
+
     def create(self) -> CompiledStateGraph:
         """Create a configured deployment agent.
 
@@ -48,9 +66,25 @@ class ARMAAgentFactory:
             >>> agent = factory.create()
             >>> result = agent.invoke({"messages": [...]})
         """
-        llm = get_llm()
+        llm = self._build_llm()
+        tools = self._build_tools()
+        middleware = self._build_middleware()
 
-        tools = [
+        return create_agent(
+            model=llm,
+            tools=tools,
+            state_schema=ARMAAgentState,
+            middleware=middleware,
+            checkpointer=self.checkpointer,
+        )
+
+    def _build_llm(self):
+        """Build LLM"""
+        return get_llm()
+
+    def _build_tools(self) -> list:
+        """Build tool list."""
+        return [
             delete_resource,
             execute_deployment,
             get_resource,
@@ -60,17 +94,9 @@ class ARMAAgentFactory:
             plan_deployment,
             preview_what_if,
             update_resource_tags,
+            check_existing_resource,
+            create_resource_group,
         ]
-
-        middleware = self._build_middleware()
-
-        return create_agent(
-            model=llm,
-            tools=tools,
-            state_schema=ARMAAgentState,
-            middleware=middleware,
-            checkpointer=MemorySaver(),
-        )
 
     def _build_middleware(self) -> list:
         """Build the middleware stack.
@@ -96,7 +122,13 @@ class ARMAAgentFactory:
 
         return [
             deployment_prompt,
-            PreflightMiddleware(),
+            PreflightMiddleware(
+                validate_rbac_roles=True,
+                required_roles=["Contributor", "Owner"],
+                timeout_seconds=15,
+            ),
+            # Note: Policy compliance checking is handled by What-If analysis
+            # AzurePolicyComplianceMiddleware disabled to avoid duplicate checks
             TodoListMiddleware(
                 system_prompt="For complex Azure deployments, use write_todos to break down steps: analyze, plan, validate, execute"
             ),
@@ -114,30 +146,34 @@ class ARMAAgentFactory:
                     "execute_deployment": {"allowed_decisions": ["approve", "reject"]},
                     "delete_resource": {"allowed_decisions": ["approve", "reject"]},
                 },
-                description_prefix="Approval required for execute deployment",
+                description_prefix="Approval required for operation",
             ),
         ]
 
 
-def create_arma_agent() -> CompiledStateGraph:
+def create_arma_agent(
+    checkpointer: BaseCheckpointSaver | None = None,
+) -> CompiledStateGraph:
     """Create an ARMA deployment agent.
 
-    This is a helper function that creates and configures a deployment agent
-    using the ARMAAgentFactory.
+    Args:
+        checkpointer: Optional explicit checkpointer instance
 
     Returns:
         A configured LangChain agent with checkpointer for HITL support
 
     Example:
         >>> from arma.agent import create_arma_agent
+        >>> from arma.agent.checkpointer import CheckpointerFactory
         >>> from langchain_core.runnables import RunnableConfig
         >>>
+        >>> # Create agent with default memory checkpointer
         >>> agent = create_arma_agent()
-        >>>
-        >>> # Run agent with initial state
-        >>> config = RunnableConfig(configurable={"thread_id": "test-123"})
-        >>> state = {"messages": [{"role": "user", "content": "Deploy a storage account"}]}
         >>> result = agent.invoke(state, config)
+        >>>
+        >>> # Create agent using factory method
+        >>> checkpointer = CheckpointerFactory.create("memory")
+        >>> agent = create_arma_agent(checkpointer=checkpointer)
     """
-    factory = ARMAAgentFactory()
+    factory = ARMAAgentFactory(checkpointer=checkpointer)
     return factory.create()

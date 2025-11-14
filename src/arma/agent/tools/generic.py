@@ -45,4 +45,4 @@ def get_current_date(
 @tool(description="Return the version of ARMA")
 def get_arma_version() -> str:
     """Return the version of ARMA (Azure Resource Management Assistant)."""
-    return __version__
+    return __version__.arma_version

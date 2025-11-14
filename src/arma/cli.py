@@ -15,7 +15,7 @@ from langgraph.types import Command
 from arma.agent import create_arma_agent
 
 
-async def run_agent() -> None:
+async def run_agent(query: str | None = None) -> None:
     """Run interactive agent session with HITL approval for execute_deployment."""
     print("=" * 60)
     print("🚀 ARMA Agent")
@@ -28,13 +28,11 @@ async def run_agent() -> None:
 
     print(f"📝 Session ID: {thread_id}\n")
 
-    # Track if this is the first turn
     is_first_turn = True
 
     while True:
         try:
-            # Get user input
-            user_input = input("\n👤 You: ").strip()
+            user_input = query or input("\n👤 You: ").strip()
 
             if not user_input:
                 continue
@@ -43,8 +41,6 @@ async def run_agent() -> None:
                 print("\n👋 Thanks for using ARMA! Goodbye!")
                 break
 
-            # For first turn, include initial state with user_id
-            # For subsequent turns, only send the new message - checkpointer restores the rest
             if is_first_turn:
                 turn_input = {
                     "messages": [{"role": "user", "content": user_input}],
@@ -68,10 +64,8 @@ async def run_agent() -> None:
                     print("HUMAN APPROVAL REQUIRED")
                     print("=" * 50)
 
-                    # Extract action request details
                     value = interrupt.value if hasattr(interrupt, "value") else interrupt
 
-                    # Handle different interrupt value structures
                     action_requests = []
                     if isinstance(value, dict):
                         action_requests = value.get("action_requests", [])
@@ -79,7 +73,6 @@ async def run_agent() -> None:
                         action_requests = value
 
                     for req in action_requests:
-                        # Extract tool name from different possible locations
                         tool_name = (
                             req.get("tool")
                             or req.get("action")
@@ -112,7 +105,7 @@ async def run_agent() -> None:
 
             final_response = result
 
-            # Print all messages to see tool calls and intermediate steps
+            # Print all messages
             print("\n" + "=" * 50)
             print("💭 CONVERSATION TRACE:")
             print("=" * 50)

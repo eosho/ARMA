@@ -37,6 +37,13 @@ param networkAcls object = {
   bypass: 'AzureServices'
 }
 
+@description('Public network access for the Key Vault')
+@allowed([
+  'Enabled'
+  'Disabled'
+])
+param publicNetworkAccess string = 'Enabled'
+
 @description('Tags for the Key Vault')
 param tags object = {}
 
@@ -56,7 +63,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
     enableRbacAuthorization: enableRbacAuthorization
     accessPolicies: accessPolicies
     networkAcls: networkAcls
-    publicNetworkAccess: 'Enabled'
+    publicNetworkAccess: publicNetworkAccess
   }
 }
 

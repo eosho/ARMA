@@ -9,6 +9,7 @@ from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import AIMessage
 from langgraph.runtime import Runtime
 
+from arma.agent.state.schema import ARMAAgentState
 from arma.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -16,6 +17,8 @@ logger = get_logger(__name__)
 
 class UsageTrackingMiddleware(AgentMiddleware):
     """Track LLM usage metrics and costs."""
+
+    state_schema = ARMAAgentState
 
     def __init__(self) -> None:
         """Initialize usage tracking middleware."""
@@ -28,7 +31,7 @@ class UsageTrackingMiddleware(AgentMiddleware):
         """Return the middleware name identifier."""
         return "usage_tracking"
 
-    def after_model(
+    async def aafter_model(
         self, state: AgentState, runtime: Runtime
     ) -> dict[str, Any] | None:  # noqa: ARG002
         """Track usage after model call.
@@ -40,45 +43,53 @@ class UsageTrackingMiddleware(AgentMiddleware):
         Returns:
             None (no state modifications)
         """
-        # Get the last message (should be AIMessage from model)
-        if not state.get("messages"):
+        messages = state.get("messages", [])
+        if not messages:
             return None
 
-        last_message = state["messages"][-1]
-        if not isinstance(last_message, AIMessage):
+        latest_message = messages[-1]
+        if not isinstance(latest_message, AIMessage):
             return None
 
         # Extract usage metadata if available
-        if hasattr(last_message, "usage_metadata") and last_message.usage_metadata:
-            usage = last_message.usage_metadata
-            input_tokens = usage.get("input_tokens", 0)
-            output_tokens = usage.get("output_tokens", 0)
-            total_tokens = usage.get("total_tokens", input_tokens + output_tokens)
+        usage_metadata = getattr(latest_message, "usage_metadata", None)
+        if not usage_metadata:
+            return None
 
-            # Update totals
-            self.total_input_tokens += input_tokens
-            self.total_output_tokens += output_tokens
-            self.total_calls += 1
+        input_tokens = usage_metadata.get("input_tokens", 0)
+        output_tokens = usage_metadata.get("output_tokens", 0)
+        total_tokens = usage_metadata.get("total_tokens", input_tokens + output_tokens)
 
-            # Log usage
-            logger.info(
-                "Token usage: input=%s tokens, output=%s tokens, total=%s tokens",
-                f"{input_tokens:,}",
-                f"{output_tokens:,}",
-                f"{total_tokens:,}",
-            )
+        # Update totals
+        self.total_input_tokens += input_tokens
+        self.total_output_tokens += output_tokens
+        self.total_calls += 1
 
-            logger.info(
-                "Session totals: input=%s tokens, output=%s tokens, total=%s tokens, calls=%s",
-                f"{self.total_input_tokens:,}",
-                f"{self.total_output_tokens:,}",
-                f"{(self.total_input_tokens + self.total_output_tokens):,}",
-                self.total_calls,
-            )
+        # Log usage
+        logger.debug(
+            "Token usage: input=%s tokens, output=%s tokens, total=%s tokens",
+            f"{input_tokens:,}",
+            f"{output_tokens:,}",
+            f"{total_tokens:,}",
+        )
 
-        return None
+        logger.debug(
+            "Session totals: input=%s tokens, output=%s tokens, total=%s tokens, calls=%s",
+            f"{self.total_input_tokens:,}",
+            f"{self.total_output_tokens:,}",
+            f"{(self.total_input_tokens + self.total_output_tokens):,}",
+            self.total_calls,
+        )
 
-    def get_stats(self) -> dict[str, int]:
+        usage: dict[str, Any] = {
+            "total_input_tokens": str(input_tokens),
+            "total_output_tokens": str(output_tokens),
+            "total_calls": str(total_tokens),
+        }
+
+        return usage
+
+    async def get_stats(self) -> dict[str, int]:
         """Get current usage statistics.
 
         Returns:
@@ -91,7 +102,7 @@ class UsageTrackingMiddleware(AgentMiddleware):
             "total_calls": self.total_calls,
         }
 
-    def reset_stats(self) -> None:
+    async def reset_stats(self) -> None:
         """Reset usage statistics."""
         self.total_input_tokens = 0
         self.total_output_tokens = 0

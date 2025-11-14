@@ -19,156 +19,55 @@ from arma.core.logging import get_logger
 logger = get_logger(__name__)
 
 
-@tool
+@tool("execute_deployment")
 async def execute_deployment(
+    deployment_plan: dict[str, Any],
     runtime: ToolRuntime,
 ) -> Command:
-    """Execute an Azure deployment using the plan from state.
-
-    This tool deploys a Bicep template to Azure using the deployment_plan
-    created by plan_deployment. All necessary information (template, parameters,
-    scope, location, etc.) is read from the deployment_plan in state.
-
-    Requirements:
-    - Must be called after plan_deployment
-    - Requires deployment_plan in state with all deployment details
+    """Execute an Azure deployment using the provided deployment plan.
 
     Args:
+        deployment_plan: Deployment plan from state containing template, parameters, scope, etc.
         runtime: Tool runtime context (injected automatically).
 
     Returns:
         Command with updated state and ToolMessage containing deployment results.
 
-    Examples:
-        >>> # After plan_deployment has been called
-        >>> result = await execute_deployment()
+    Example:
+        >>> # After plan_deployment creates the plan in state
+        >>> result = await execute_deployment(
+        ...     deployment_plan=state["deployment_plan"]
+        ... )
     """
-    logger.info("Starting execute_deployment")
-
-    # Get deployment plan from state
-    deployment_plan = runtime.state.get("deployment_plan")
-    if not deployment_plan:
-        error_msg = (
-            "No deployment plan found in state. "
-            "You must call plan_deployment first before executing deployment."
-        )
-        logger.error(error_msg)
-        return Command(
-            update={
-                "messages": [
-                    ToolMessage(
-                        content=f"Error: {error_msg}",
-                        tool_call_id=runtime.tool_call_id,
-                    )
-                ],
-            }
-        )
-
-    # Extract deployment details from plan
-    template_file = deployment_plan.get("template_path")
-    parameters = deployment_plan.get("parameters", {})
-    deployment_scope = deployment_plan.get("deployment_scope", "resourceGroup")
     subscription_id = deployment_plan.get("subscription_id")
     resource_group = deployment_plan.get("resource_group")
     location = deployment_plan.get("location")
+
+    logger.debug(f"Executing deployment: {subscription_id}/{resource_group}/{location}")
+
+    template_file = deployment_plan.get("template_path")
+    parameters = deployment_plan.get("parameters", {})
+    deployment_scope = deployment_plan.get("deployment_scope", "resourceGroup")
     arm_template = deployment_plan.get("arm_template")
 
-    # Generate deployment name
     deployment_name = f"arma-deploy-{int(time.time())}"
-
-    # Validate required fields from deployment plan
-    if not subscription_id:
-        error_msg = "Missing subscription_id in deployment plan"
-        logger.error(error_msg)
-        return Command(
-            update={
-                "messages": [
-                    ToolMessage(
-                        content=f"Error: {error_msg}",
-                        tool_call_id=runtime.tool_call_id,
-                    )
-                ],
-            }
-        )
-
-    if not template_file:
-        error_msg = "Missing template_path in deployment plan"
-        logger.error(error_msg)
-        return Command(
-            update={
-                "messages": [
-                    ToolMessage(
-                        content=f"Error: {error_msg}",
-                        tool_call_id=runtime.tool_call_id,
-                    )
-                ],
-            }
-        )
-
-    # Validate scope-specific requirements
-    if deployment_scope == "resourceGroup":
-        if not resource_group:
-            error_msg = "Resource group deployment requires resource_group in deployment plan"
-            logger.error(error_msg)
-            return Command(
-                update={
-                    "messages": [
-                        ToolMessage(
-                            content=f"Error: {error_msg}",
-                            tool_call_id=runtime.tool_call_id,
-                        )
-                    ],
-                }
-            )
-    elif deployment_scope == "subscription":
-        if not location:
-            error_msg = "Subscription deployment requires location in deployment plan"
-            logger.error(error_msg)
-            return Command(
-                update={
-                    "messages": [
-                        ToolMessage(
-                            content=f"Error: {error_msg}",
-                            tool_call_id=runtime.tool_call_id,
-                        )
-                    ],
-                }
-            )
-    else:
-        error_msg = f"Unsupported deployment scope: {deployment_scope}"
-        logger.error(error_msg)
-        return Command(
-            update={
-                "messages": [
-                    ToolMessage(
-                        content=f"Error: {error_msg}",
-                        tool_call_id=runtime.tool_call_id,
-                    )
-                ],
-            }
-        )
 
     logger.debug(
         f"Deployment context: scope={deployment_scope}, resource_group={resource_group}, location={location}"
     )
-    logger.info(f"Executing deployment '{deployment_name}' to {resource_group or location}")
+    logger.debug(f"Executing deployment '{deployment_name}' to {resource_group or location}")
 
     start_time = time.time()
 
     try:
-        # Use ARM template from deployment plan if available (already compiled)
-        if arm_template:
-            logger.debug("Using ARM template from deployment plan")
-        else:
-            # Compile Bicep template to ARM JSON as fallback
-            logger.debug(f"Compiling Bicep template: {template_file}")
-            bicep_result = subprocess.run(
-                ["az", "bicep", "build", "--file", template_file, "--stdout"],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            arm_template = json.loads(bicep_result.stdout)
+        logger.debug(f"Compiling Bicep template: {template_file}")
+        bicep_result = subprocess.run(
+            ["az", "bicep", "build", "--file", str(template_file), "--stdout"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        arm_template = json.loads(bicep_result.stdout)
 
         # Write ARM template to temp file
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
@@ -194,7 +93,7 @@ async def execute_deployment(
                     "--name",
                     deployment_name,
                     "--template-file",
-                    template_file,
+                    arm_template_file,
                     "--parameters",
                     params_file,
                 ]
@@ -209,14 +108,14 @@ async def execute_deployment(
                     "--name",
                     deployment_name,
                     "--template-file",
-                    template_file,
+                    arm_template_file,
                     "--parameters",
                     params_file,
                 ]
             else:
                 raise ValueError(f"Unsupported deployment scope: {deployment_scope}")
 
-            logger.info(f"Starting deployment: {deployment_name}")
+            logger.debug(f"Starting deployment: {deployment_name}")
             logger.debug(f"Command: {' '.join(cmd)}")
 
             # Execute deployment
@@ -243,7 +142,7 @@ async def execute_deployment(
                 },
             }
 
-            logger.info(f"Deployment completed successfully: {deployment_name} ({duration:.2f}s)")
+            logger.debug(f"Deployment completed: {deployment_name} ({duration:.2f}s)")
 
             # Return Command with state updates and ToolMessage
             return Command(
