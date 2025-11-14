@@ -17,19 +17,17 @@ logger = get_logger(__name__)
 
 
 def get_policy_assignments(
-    subscription_id: str, resource_group: str | None = None,
+    subscription_id: str,
+    resource_group: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Get all policy assignments for a scope.
-
-    Retrieves policy assignments at subscription and resource group levels,
-    including inherited assignments from parent scopes.
+    """Get policy assignments for a scope including inherited assignments.
 
     Args:
         subscription_id: Azure subscription ID
-        resource_group: Optional resource group name for RG-scoped assignments
+        resource_group: Optional resource group name
 
     Returns:
-        List of policy assignment dictionaries with name, displayName, policyDefinitionId, etc.
+        List of policy assignments
     """
     try:
         cmd = [
@@ -48,12 +46,12 @@ def get_policy_assignments(
         if resource_group:
             cmd.extend(["--resource-group", resource_group])
 
-        logger.debug(f"Running command: {' '.join(cmd)}")
+        logger.debug(f"Getting policy assignments for {subscription_id}")
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
 
         if result.returncode == 0:
             assignments = json.loads(result.stdout)
-            logger.info(f"Retrieved {len(assignments)} policy assignments")
+            logger.debug(f"Retrieved {len(assignments)} policy assignments")
             return assignments
         else:
             logger.error(f"Failed to get policy assignments: {result.stderr}")
@@ -81,19 +79,17 @@ def run_what_if_analysis(
     Args:
         subscription_id: Azure subscription ID
         resource_group: Resource group name
-        template_path: Path to ARM template file
+        template_path: Path to ARM template
         parameters: Deployment parameters
 
     Returns:
-        What-If analysis results as dict, or None if analysis fails
+        What-If results or None if failed
     """
     try:
         # Write parameters to temporary file
         import tempfile
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False
-        ) as param_file:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as param_file:
             json.dump({"parameters": parameters}, param_file)
             param_file_path = param_file.name
 
@@ -121,7 +117,7 @@ def run_what_if_analysis(
 
             if result.returncode == 0:
                 what_if_result = json.loads(result.stdout)
-                logger.info("What-If analysis completed successfully")
+                logger.debug("What-If analysis completed")
                 return what_if_result
             else:
                 logger.warning(f"What-If analysis failed: {result.stderr[:200]}")
@@ -129,12 +125,11 @@ def run_what_if_analysis(
 
         finally:
             # Clean up temp file
+            import contextlib
             import os
 
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(param_file_path)
-            except OSError:
-                pass
 
     except subprocess.TimeoutExpired:
         logger.error("What-If analysis timed out")
@@ -150,62 +145,47 @@ def run_what_if_analysis(
 def evaluate_policy_compliance(
     policy_assignments: list[dict[str, Any]],
     what_if_results: dict[str, Any] | None,
-    deployment_plan: dict[str, Any],
     resource_type: str,
     location: str,
     include_warnings: bool = True,
 ) -> dict[str, Any]:
     """Evaluate policy compliance for a deployment.
 
-    Analyzes policy assignments to identify potential violations. Currently focuses
-    on common Deny policies that can be evaluated statically.
-
     Args:
-        policy_assignments: List of policy assignments from get_policy_assignments
-        what_if_results: What-If analysis results (optional, improves accuracy)
-        deployment_plan: Deployment plan from state
-        include_warnings: Include Audit policy warnings in results
+        policy_assignments: Policy assignments from get_policy_assignments
+        what_if_results: Optional What-If results for improved accuracy
+        resource_type: Resource type being deployed
+        location: Target location
+        include_warnings: Include Audit policy warnings
 
     Returns:
-        Dictionary with 'violations' (list) and 'warnings' (list)
+        Dict with 'violations' and 'warnings' lists
     """
     violations = []
     warnings = []
 
-    # Extract deployment context
-    parameters = deployment_plan.get("parameters", {})
-    #resource_type = deployment_plan.get("resource_type", "")
-    #location = parameters.get("location", "")
-
-    logger.info(
-        f"Evaluating compliance for {resource_type} in {location} with {len(policy_assignments)} policies"
+    logger.debug(
+        f"Evaluating compliance: {resource_type} in {location} with {len(policy_assignments)} policies"
     )
-
-    # Analyze each policy assignment
     for assignment in policy_assignments:
         try:
             display_name = assignment.get("displayName", "Unknown Policy")
             policy_def_id = assignment.get("policyDefinitionId", "")
 
-            # Get enforcement mode
             enforcement_mode = assignment.get("enforcementMode", "Default")
             if enforcement_mode == "DoNotEnforce":
-                logger.debug(f"Skipping policy '{display_name}' (DoNotEnforce mode)")
+                logger.debug(f"Skipping policy '{display_name}' (DoNotEnforce)")
                 continue
-
-            # Check for common policy patterns
-            # Note: Full policy evaluation requires fetching policy definitions
-            # and evaluating conditions - this is a simplified check
-
-            # Check for location restrictions
             if "allowed locations" in display_name.lower() or "location" in policy_def_id.lower():
                 policy_params = assignment.get("parameters", {})
                 allowed_locations_param = policy_params.get("listOfAllowedLocations", {})
                 allowed_locations = allowed_locations_param.get("value", [])
 
-                if allowed_locations and location and location.lower() not in [
-                    loc.lower() for loc in allowed_locations
-                ]:
+                if (
+                    allowed_locations
+                    and location
+                    and location.lower() not in [loc.lower() for loc in allowed_locations]
+                ):
                     violations.append(
                         {
                             "policy": display_name,
@@ -218,45 +198,42 @@ def evaluate_policy_compliance(
                         f"Policy violation detected: {display_name} - location not allowed"
                     )
 
-            # Check for required tags (simplified check)
-            if "require" in display_name.lower() and "tag" in display_name.lower():
-                # Note: This is a basic check - full evaluation would require fetching
-                # the policy definition and checking the exact tag requirements
-                if include_warnings:
-                    warnings.append(
-                        {
-                            "policy": display_name,
-                            "type": "required_tags",
-                            "message": f"Policy '{display_name}' may require specific tags",
-                            "remediation": "Review policy requirements and ensure all required tags are present",
-                        }
-                    )
-
-            # Check for SKU restrictions (simplified)
-            if "allowed" in display_name.lower() and (
-                "sku" in display_name.lower() or "size" in display_name.lower()
+            if (
+                "require" in display_name.lower()
+                and "tag" in display_name.lower()
+                and include_warnings
             ):
-                if include_warnings:
-                    warnings.append(
-                        {
-                            "policy": display_name,
-                            "type": "sku_restriction",
-                            "message": f"Policy '{display_name}' may restrict SKUs or sizes",
-                            "remediation": "Review policy to ensure the SKU/size you're deploying is allowed",
-                        }
-                    )
+                warnings.append(
+                    {
+                        "policy": display_name,
+                        "type": "required_tags",
+                        "message": f"Policy '{display_name}' may require specific tags",
+                        "remediation": "Review policy requirements and ensure all required tags are present",
+                    }
+                )
+
+            if (
+                "allowed" in display_name.lower()
+                and ("sku" in display_name.lower() or "size" in display_name.lower())
+                and include_warnings
+            ):
+                warnings.append(
+                    {
+                        "policy": display_name,
+                        "type": "sku_restriction",
+                        "message": f"Policy '{display_name}' may restrict SKUs or sizes",
+                        "remediation": "Review policy to ensure the SKU/size you're deploying is allowed",
+                    }
+                )
 
         except Exception as e:
             logger.error(f"Error evaluating policy assignment: {e}")
             continue
 
-    # Analyze What-If results if available
     if what_if_results:
         changes = what_if_results.get("changes", [])
-        logger.info(f"What-If detected {len(changes)} changes")
+        logger.debug(f"What-If detected {len(changes)} changes")
 
-        # Check for any errors in What-If (may indicate policy issues)
-        status = what_if_results.get("status", "")
         error = what_if_results.get("error", {})
         if error:
             error_message = error.get("message", "Unknown error")
@@ -270,9 +247,7 @@ def evaluate_policy_compliance(
                     }
                 )
 
-    logger.info(
-        f"Policy evaluation complete: {len(violations)} violations, {len(warnings)} warnings"
-    )
+    logger.debug(f"Policy evaluation: {len(violations)} violations, {len(warnings)} warnings")
 
     return {"violations": violations, "warnings": warnings}
 
@@ -280,14 +255,14 @@ def evaluate_policy_compliance(
 def format_violation_message(
     violations: list[dict[str, Any]], warnings: list[dict[str, Any]] | None = None
 ) -> str:
-    """Format policy violations into a user-friendly message.
+    """Format policy violations into user-friendly message.
 
     Args:
-        violations: List of policy violations
-        warnings: Optional list of policy warnings
+        violations: Policy violations
+        warnings: Optional policy warnings
 
     Returns:
-        Formatted message string
+        Formatted message
     """
     message_parts = []
 

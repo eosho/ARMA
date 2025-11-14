@@ -11,7 +11,7 @@ def get_llm(**kwargs: Any) -> AzureChatOpenAI:
     """Get configured Azure OpenAI LLM instance.
 
     Args:
-        **kwargs: Override configuration (temperature, azure_deployment, etc.)
+        **kwargs: Override configuration (temperature, azure_deployment, streaming, etc.)
 
     Returns:
         Configured AzureChatOpenAI instance
@@ -29,4 +29,5 @@ def get_llm(**kwargs: Any) -> AzureChatOpenAI:
             "azure_deployment", settings.azure_openai_deployment_name or "gpt-4o"
         ),
         temperature=kwargs.get("temperature", 0.0),
+        streaming=kwargs.get("streaming", False),
     )

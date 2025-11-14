@@ -3,7 +3,7 @@
 __author__ = "ARMA Team"
 __license__ = "MIT"
 
-from arma.core.config import settings
 from arma.__version__ import get_version
+from arma.core.config import settings
 
 __all__ = ["settings", "get_version"]

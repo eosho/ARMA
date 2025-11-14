@@ -3,7 +3,9 @@
 from arma.agent.tools.execute import execute_deployment
 from arma.agent.tools.generic import get_arma_version, get_current_date
 from arma.agent.tools.plan import plan_deployment, preview_what_if
-from arma.agent.tools.query import (
+from arma.agent.tools.resource import (
+    check_existing_resource,
+    create_resource_group,
     delete_resource,
     get_resource,
     list_resources,
@@ -14,6 +16,8 @@ __all__ = [
     "plan_deployment",
     "preview_what_if",
     "execute_deployment",
+    "check_existing_resource",
+    "create_resource_group",
     "list_resources",
     "get_arma_version",
     "get_current_date",

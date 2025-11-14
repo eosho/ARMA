@@ -29,4 +29,4 @@ def get_version() -> str:
     return version
 
 
-__version__ = get_version()
+arma_version = get_version()

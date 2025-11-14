@@ -57,7 +57,7 @@ uv run poe dev-agent
 - **📊 What-If Analysis** - Preview changes before deployment with Azure's native what-if API
 - **✅ Human-in-the-Loop (HITL)** - Approve/reject sensitive operations before execution
 - **🏷️ Automatic Tagging** - Tags deployed resources with metadata (user, timestamp, agent)
-- **💾 Conversation Memory** - Maintains context across multiple interactions
+- **💾 Conversation Memory** - Persistent checkpointing for stateful conversations
 - **📝 TODO Planning** - Breaks down complex deployments into manageable steps
 - **🔐 Azure-Native Auth** - Uses `DefaultAzureCredential` via the Azure CLI
 
@@ -122,7 +122,7 @@ sequenceDiagram
 - **Agent State**: Tracks Azure context, deployment plans, validation results
 - **Tools**: Modular functions for Azure operations (query, plan, execute, delete)
 - **Middleware**: Interceptors that enhance agent capabilities (see below)
-- **Checkpointer**: Persists conversation state for HITL and resumability
+- **Checkpointer**: Memory-based state persistence for HITL and conversation continuity
 
 ### Middleware Stack
 
@@ -145,17 +145,11 @@ ARMA's agent tools are implemented in `src/arma/agent/tools/`:
 
 | Tool | Purpose | Location |
 |------|---------|----------|
-| **check_existing_resource** | Checks if a resource exists in Azure and triggers template discovery | `pre_flight.py` (middleware) |
-| **create_resource_group** | Creates or validates resource group existence | `pre_flight.py` (middleware) |
-| **plan_deployment** | Compiles Bicep to ARM, merges parameters, and creates deployment plan | `plan.py` |
-| **preview_what_if** | Runs Azure what-if analysis to preview deployment changes | `plan.py` |
-| **execute_deployment** | Executes the deployment plan (requires HITL approval) | `execute.py` |
-| **list_resources** | Lists Azure resources by type with optional filters | `query.py` |
-| **get_resource** | Gets detailed information about a specific resource | `query.py` |
-| **delete_resource** | Deletes an Azure resource (requires HITL approval) | `query.py` |
-| **update_resource_tags** | Updates or replaces tags on an existing resource | `query.py` |
-| **get_arma_version** | Returns the current ARMA version | `generic.py` |
-| **get_current_date** | Returns the current date and time | `generic.py` |
+| **Resource Management** | `check_existing_resource`, `list_resources`, `get_resource`, `delete_resource`, `update_resource_tags` | `resource.py` |
+| **Deployment** | `plan_deployment`, `preview_what_if` | `plan.py` |
+| **Execution** | `execute_deployment` | `execute.py` |
+| **Generic** | `get_arma_version`, `get_current_date` | `generic.py` |
+| **Validation** | `execute_deployment` | `execute.py` |
 
 ---
 
@@ -212,35 +206,32 @@ AZURE_OPENAI_API_VERSION=2024-02-15-preview
 ### Run the Agent
 
 ```bash
-# Interactive CLI
+# Interactive CLI (streaming)
 uv run poe dev-agent
 
-# Or directly
-python run_arma.py
+# Non-streaming mode
+uv run poe dev-agent-no-stream
 ```
 
 **Example interaction:**
 ```
 🚀 ARMA Agent
 ============================================================
-Type 'quit' or 'exit' to end the session
 
-👤 You: Deploy a storage account named mystorageacct in resource group test-rg
+👤 You: Deploy a premium key vault arma-kv-test in test-rg in eastus
 
-🤔 Agent thinking...
-
-[Agent discovers template, validates parameters, generates deployment plan]
+🤔 Agent: ✓ Template found: Microsoft.KeyVault/vaults
+         ✓ Plan created: 1 resource
+         ✓ What-if: 1 CREATE operation
 
 ============================================================
 HUMAN APPROVAL REQUIRED
 ============================================================
-
 Action: execute_deployment
-Description: Deploy Bicep template for Microsoft.Storage/storageAccounts
 
 Decision ([a]pprove/[r]eject): a
 
-✅ Deployment completed successfully!
+✅ Deployment completed! (12.3s)
 ```
 
 ---
@@ -288,16 +279,19 @@ Decision: approve
 
 ```
 arma/
-├── src/arma/              # Main package
-│   ├── agent/             # Agent logic
-│   │   ├── factory.py     # Agent factory
-│   │   ├── prompt.py      # System prompts
-│   │   ├── state/         # State schemas
-│   │   ├── tools/         # Agent tools
-│   │   └── middleware/    # Middleware stack
-│   ├── core/              # Core utilities
-│   │   ├── config.py      # Configuration
-│   │   └── logging.py     # Logging setup
+├── src/arma/
+│   ├── agent/
+│   │   ├── factory.py         # Agent factory
+│   │   ├── prompt.py          # System prompts
+│   │   ├── state/             # State schemas
+│   │   ├── tools/             # Agent tools
+│   │   ├── middleware/        # Middleware stack
+│   │   ├── checkpointer/      # Checkpointer factory
+│   │   └── llm/               # LLM registry
+│   └── core/                  # Core utilities
+├── bicep/modules/             # Bicep templates by resource type
+└── pyproject.toml
+```
 │   └── models/            # Database models (future)
 ├── bicep/                 # Bicep templates
 │   └── modules/           # Modular templates by resource type
@@ -355,24 +349,6 @@ Templates are automatically discovered based on resource type. To add a new temp
 1. Create folder: `bicep/modules/{Provider}/{ResourceType}/`
 2. Add `main.bicep` with parameters
 3. ARMA will auto-discover it via `TemplateDiscoveryMiddleware`
-
----
-
-## Contributing
-
-Contributions are welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-Ensure tests pass and code is formatted:
-```bash
-uv run poe quality
-uv run poe test
-```
 
 ---
 

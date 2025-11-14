@@ -162,7 +162,7 @@ def get_template_scope(template_path: str) -> str:
                                 "tenant",
                             ]:
                                 scope = scope_value
-                                logger.info(f"Template scope detected: {scope}")
+                                logger.debug(f"Template scope detected: {scope}")
                     break  # targetScope must be first non-comment line
 
     except Exception as e:

@@ -1,10 +1,11 @@
 """Query tools for Azure resource operations.
 
-This module provides tools for listing, getting, and deleting Azure resources.
+This module provides tools for listing, getting, deleting, and managing Azure resources.
 """
 
 import json
 import subprocess
+from typing import Any
 
 from langchain.tools import ToolRuntime, tool
 from langchain_core.messages import ToolMessage
@@ -15,8 +16,171 @@ from arma.core.logging import get_logger
 logger = get_logger(__name__)
 
 
+@tool(description="Check if a resource exists in Azure")
+async def check_existing_resource(
+    subscription_id: str,
+    resource_group: str,
+    resource_name: str,
+    resource_type: str,
+    runtime: ToolRuntime,
+) -> Command:
+    """Check if a resource already exists in Azure.
+
+    Args:
+        subscription_id: Azure subscription ID.
+        resource_group: Name of the Azure resource group.
+        resource_name: Name of the Azure resource to check.
+        resource_type: Azure resource type (e.g., 'Microsoft.Storage/storageAccounts').
+        runtime: Tool runtime context (injected automatically).
+
+    Returns:
+        Command with state updates and tool message.
+    """
+    logger.debug(f"Checking resource: {resource_name} ({resource_type})")
+
+    try:
+        # Build resource ID
+        resource_id = f"/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/{resource_type}/{resource_name}"
+        logger.debug(f"Checking resource ID: {resource_id}")
+
+        # Check resource existence using Azure CLI
+        cmd = ["az", "resource", "show", "--ids", resource_id, "-o", "json"]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+
+        updates: dict[str, Any] = {}
+
+        if result.returncode == 0:
+            # Resource exists
+            resource_details = json.loads(result.stdout)
+            updates["intent"] = "update"
+            logger.debug(f"Resource exists: {resource_name} - updating intent")
+
+            message = f"Resource '{resource_name}' exists. Will update existing resource. Details {json.dumps(resource_details, indent=2)}"
+        else:
+            # Resource doesn't exist
+            error_msg = result.stderr.lower()
+            if "could not be found" in error_msg or "notfound" in error_msg:
+                logger.debug(f"Resource does not exist: {resource_name}")
+                message = f"Resource '{resource_name}' does not exist. Will create new resource."
+            else:
+                logger.error(f"Error checking resource existence: {result.stderr}")
+                message = f"Unable to verify if resource exists: {result.stderr[:200]}"
+
+        updates["messages"] = [ToolMessage(content=message, tool_call_id=runtime.tool_call_id)]
+        return Command(update=updates)
+
+    except subprocess.TimeoutExpired:
+        logger.error(f"Timeout checking resource existence: {resource_name}")
+        message = "Timeout checking resource existence"
+        return Command(
+            update={"messages": [ToolMessage(content=message, tool_call_id=runtime.tool_call_id)]}
+        )
+    except Exception as e:
+        logger.error(f"Error checking resource: {e}")
+        message = f"Error checking resource: {str(e)}"
+        return Command(
+            update={"messages": [ToolMessage(content=message, tool_call_id=runtime.tool_call_id)]}
+        )
+
+
+@tool(description="Create a resource group if it doesn't exist")
+async def create_resource_group(
+    subscription_id: str,
+    resource_group: str,
+    location: str,
+    runtime: ToolRuntime,
+) -> Command:
+    """Create a resource group if it doesn't already exist.
+
+    Args:
+        subscription_id: Azure subscription ID.
+        resource_group: Name of the resource group.
+        location: Azure region (e.g., 'eastus').
+        runtime: Tool runtime context (injected automatically).
+
+    Returns:
+        Command with state updates and tool message.
+    """
+    try:
+        # Check if RG exists
+        check_cmd = [
+            "az",
+            "group",
+            "show",
+            "-n",
+            resource_group,
+            "--subscription",
+            subscription_id,
+            "-o",
+            "json",
+        ]
+        check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
+
+        updates: dict[str, Any] = {
+            "subscription_id": subscription_id,  # Preserve subscription_id
+            "resource_group": resource_group,
+            "location": location,
+            "resource_group_checked": True,
+        }
+
+        if check_result.returncode == 0:
+            # Resource group exists - extract details
+            rg_info = json.loads(check_result.stdout)
+            updates["location"] = rg_info.get("location", location)
+            if "tags" in rg_info and rg_info["tags"]:
+                updates["tags"] = rg_info["tags"]
+
+            logger.debug(f"Resource group exists: {resource_group} in {updates['location']}")
+            message = f"Resource group '{resource_group}' already exists in {updates['location']}"
+        else:
+            # Create RG
+            logger.debug(f"Creating resource group: {resource_group}")
+            create_cmd = [
+                "az",
+                "group",
+                "create",
+                "-n",
+                resource_group,
+                "-l",
+                location,
+                "--subscription",
+                subscription_id,
+                "-o",
+                "json",
+            ]
+            create_result = subprocess.run(create_cmd, capture_output=True, text=True, timeout=30)
+
+            if create_result.returncode == 0:
+                # Extract created RG details
+                rg_info = json.loads(create_result.stdout)
+                updates["location"] = rg_info.get("location", location)
+
+                logger.debug(f"Resource group created: {resource_group} in {updates['location']}")
+                message = f"Created resource group '{resource_group}' in {updates['location']}"
+            else:
+                logger.error(f"Failed to create resource group: {create_result.stderr}")
+                message = f"Failed to create resource group: {create_result.stderr[:200]}"
+
+        updates["messages"] = [ToolMessage(content=message, tool_call_id=runtime.tool_call_id)]
+        return Command(update=updates)
+
+    except subprocess.TimeoutExpired:
+        logger.error("Timeout creating resource group")
+        message = "Timeout creating resource group"
+        return Command(
+            update={"messages": [ToolMessage(content=message, tool_call_id=runtime.tool_call_id)]}
+        )
+    except Exception as e:
+        logger.error(f"Error creating resource group: {e}")
+        message = f"Error creating resource group: {str(e)}"
+        return Command(
+            update={"messages": [ToolMessage(content=message, tool_call_id=runtime.tool_call_id)]}
+        )
+
+
 @tool
 async def list_resources(
+    subscription_id: str,
     runtime: ToolRuntime,
     resource_type: str | None = None,
     location: str | None = None,
@@ -29,6 +193,7 @@ async def list_resources(
     Results can be filtered by location, resource group, or tags.
 
     Args:
+        subscription_id: Azure subscription ID
         resource_type: Azure resource type (e.g., 'Microsoft.Storage/storageAccounts')
         runtime: Tool runtime context (injected automatically)
         location: Filter by Azure region (e.g., 'eastus', 'westus2')
@@ -40,40 +205,20 @@ async def list_resources(
 
     Examples:
         >>> # List all resources
-        >>> result = await list_resources()
+        >>> result = await list_resources(subscription_id="your-subscription-id")
 
         >>> # List all resources in rg test-rg-01
-        >>> result = await list_resources(resource_group="test-rg-01")
+        >>> result = await list_resources(subscription_id="your-subscription-id", resource_group="test-rg-01")
 
         >>> # List all storage accounts in subscription
-        >>> result = await list_resources("Microsoft.Storage/storageAccounts")
+        >>> result = await list_resources(subscription_id="your-subscription-id", resource_type="Microsoft.Storage/storageAccounts")
 
         >>> # List VMs in specific location
-        >>> result = await list_resources("Microsoft.Compute/virtualMachines", location="eastus")
+        >>> result = await list_resources(subscription_id="your-subscription-id", resource_type="Microsoft.Compute/virtualMachines", location="eastus")
 
         >>> # List resources in specific resource group
-        >>> result = await list_resources("Microsoft.Storage/storageAccounts", resource_group="prod-rg")
+        >>> result = await list_resources(subscription_id="your-subscription-id", resource_group="prod-rg")
     """
-    subscription_id = runtime.state.get("subscription_id")
-    if not subscription_id:
-        logger.warning("subscription_id not found in state - asking user to provide it")
-        return Command(
-            update={
-                "messages": [
-                    ToolMessage(
-                        content=(
-                            "Cannot list resources: subscription_id not set in state. "
-                            "Please ask the user to provide their Azure subscription ID, "
-                            "or they can mention it in their request (e.g., 'in subscription abc-123...')."
-                        ),
-                        tool_call_id=runtime.tool_call_id,
-                    )
-                ],
-            }
-        )
-
-    logger.info(f"Listing resources in subscription {subscription_id}")
-
     # Build Azure CLI command
     cmd = [
         "az",
@@ -89,7 +234,6 @@ async def list_resources(
 
     # Add optional filters
     if resource_type:
-        logger.info(f"Listing resources of type {resource_type}")
         cmd.extend(["--resource-type", resource_type])
         logger.debug(f"Filtering by resource type: {resource_type}")
 
@@ -110,7 +254,7 @@ async def list_resources(
         result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)
 
         resources = json.loads(result.stdout)
-        logger.info(f"Found {len(resources)} resources")
+        logger.debug(f"Found {len(resources)} resources")
 
         # Return Command with state updates and ToolMessage
         return Command(
@@ -166,7 +310,7 @@ async def get_resource(
         >>> # Get VM details
         >>> result = await get_resource("/subscriptions/.../virtualMachines/myvm")
     """
-    logger.info(f"Getting resource details for: {resource_id}")
+    logger.debug(f"Getting resource: {resource_id}")
 
     # Build Azure CLI command
     cmd = ["az", "resource", "show", "--ids", resource_id, "-o", "json"]
@@ -176,7 +320,7 @@ async def get_resource(
         result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)
 
         resource = json.loads(result.stdout)
-        logger.info(f"Retrieved resource: {resource.get('name', 'unknown')}")
+        logger.debug(f"Retrieved resource: {resource.get('name')}")
 
         # Return Command with state updates and ToolMessage
         resource_name = resource.get("name", "unknown")
@@ -232,7 +376,7 @@ async def delete_resource(
         >>> # Delete storage account (will prompt for approval)
         >>> result = await delete_resource("/subscriptions/.../storageAccounts/oldaccount")
     """
-    logger.warning(f"Deleting resource: {resource_id}")
+    logger.debug(f"Deleting resource: {resource_id}")
 
     # Build Azure CLI command
     cmd = ["az", "resource", "delete", "--ids", resource_id, "--verbose"]
@@ -241,7 +385,7 @@ async def delete_resource(
         logger.debug(f"Executing command: {' '.join(cmd)}")
         subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=120)
 
-        logger.info(f"Successfully deleted resource: {resource_id}")
+        logger.debug(f"Deleted resource: {resource_id}")
 
         # Return Command with ToolMessage
         return Command(
@@ -258,12 +402,12 @@ async def delete_resource(
     except subprocess.CalledProcessError as e:
         error_msg = e.stderr.strip()
         if "ResourceNotFound" in error_msg or "NotFound" in error_msg:
-            logger.warning(f"Resource not found (may already be deleted): {resource_id}")
+            logger.debug(f"Resource not found (may already be deleted): {resource_id}")
             return Command(
                 update={
                     "messages": [
                         ToolMessage(
-                            content=f"Resource not found (alrady deleted?): {resource_id}",
+                            content=f"Resource not found (already deleted?): {resource_id}",
                             tool_call_id=runtime.tool_call_id,
                         )
                     ],
@@ -314,7 +458,7 @@ async def update_resource_tags(
         ...     merge=False
         ... )
     """
-    logger.info(f"Updating tags on resource: {resource_id} (merge={merge})")
+    logger.debug(f"Updating tags: {resource_id} (merge={merge})")
 
     # Convert tags dict to Azure CLI format: key1=value1 key2=value2
     tags_str = " ".join([f"{k}={v}" for k, v in tags.items()])
@@ -343,7 +487,7 @@ async def update_resource_tags(
         resource_data = json.loads(result.stdout)
         updated_tags = resource_data.get("tags", {})
 
-        logger.info(f"Successfully updated tags on resource: {resource_id}")
+        logger.debug(f"Tags updated: {resource_id}")
 
         # Return Command with ToolMessage
         return Command(

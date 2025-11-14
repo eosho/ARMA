@@ -1,213 +1,220 @@
-"""Deployment agent state schema.
+"""Consolidated ARMA Agent State Schema.
 
-This module defines the main ARMAAgentState that extends LangChain's AgentState
-with comprehensive fields for Azure deployment workflows.
-
-TOOL-TO-STATE MAPPING:
-- ValidationMiddleware: subscription_id, resource_group, location
-- check_existing_resource: intent, existing_resources
-- TemplateDiscoveryMiddleware: template_path, template_info, deployment_scope
-- plan_deployment: deployment_plan, what_if_results, parameters
-- execute_deployment: deployment_status, deployment_id, deployment_outputs
-- list_resources: query_results, last_query
-- get_resource: selected_resource
-- delete_resource: (reads resource_id from args, no state writes)
+This module defines the complete ARMAAgentState that extends LangChain's AgentState
+with all fields needed for Azure deployment operations.
 """
 
-from datetime import datetime
 from typing import Any, Literal, NotRequired
 
 from langchain.agents import AgentState
 
-from arma.agent.state.azure import (
-    DeploymentScope,
-    TemplateInfoDict,
-)
-from arma.agent.state.execution import (
-    ApprovalDecisionDict,
-    ApprovalStatus,
-    DeploymentStatus,
-    ErrorInfoDict,
-)
-from arma.agent.state.planning import (
-    DeploymentPlanDict,
-    WhatIfResultsDict,
-)
-from arma.agent.state.validation import (
-    ResourceValidationDict,
-    ValidationResultsDict,
-)
-
-Intent = Literal["deploy", "update", "delete", "query", "chat"]
-UserRole = Literal["admin", "approver", "deployer", "viewer"]
+# Type aliases
+DeploymentScope = Literal["resourceGroup", "subscription", "managementGroup", "tenant"]
+DeploymentStatus = Literal[
+    "pending",
+    "analyzing",
+    "planning",
+    "awaiting_approval",
+    "executing",
+    "completed",
+    "failed",
+    "cancelled",
+]
+ApprovalStatus = Literal["pending", "approved", "rejected", "edited"]
+Intent = Literal["deploy", "update", "delete", "query", "unknown"]
+UserRole = Literal["admin", "contributor", "reader", "guest"]
 
 
 class ARMAAgentState(AgentState):
-    """Extended agent state for Azure deployment workflows.
+    """Complete agent state for ARMA deployment operations.
 
-    Extends LangChain's AgentState (provides 'messages' field) with Azure-specific
-    fields for validation, planning, execution, and HITL approval.
+    Extends LangChain AgentState with Azure deployment-specific fields.
+    All fields are optional (NotRequired) to support incremental state building.
+
+    Fields are organized by category:
+    - Azure Context: subscription, resource group, location, etc.
+    - Template Discovery: template path, parameters, scope
+    - Deployment Planning: deployment plan, what-if results
+    - Execution: deployment status, approval decisions
+    - Validation: resource validation, policy compliance
+    - Usage Tracking: token counts, model calls
+    - Query Results: resource lists, resource details
     """
 
-    # === Core Identification ===
-    thread_id: NotRequired[str]
-    """LangGraph conversation thread ID for state persistence."""
-
-    user_id: NotRequired[str]
-    """Authenticated user identifier (email or username)."""
-
-    deployment_id: NotRequired[str]
-    """Unique deployment identifier (UUID)."""
-
-    # === Intent & Request ===
-    intent: NotRequired[Intent]
-    """User's intent: deploy, update, delete, query, or chat."""
-
-    original_request: NotRequired[str]
-    """User's original natural language request."""
-
-    # === Azure Deployment Context ===
+    # ===== Azure Context (set by PreflightMiddleware) =====
     subscription_id: NotRequired[str]
-    """Target Azure subscription GUID."""
+    """Azure subscription GUID."""
+
+    subscription_name: NotRequired[str]
+    """Human-readable subscription name."""
+
+    tenant_id: NotRequired[str]
+    """Azure AD tenant GUID."""
 
     resource_group: NotRequired[str]
     """Target resource group name."""
 
     location: NotRequired[str]
-    """Target Azure region."""
-
-    deployment_scope: NotRequired[DeploymentScope]
-    """Deployment scope: resourceGroup, subscription, managementGroup, or tenant."""
+    """Azure region (e.g., 'eastus', 'westus2')."""
 
     tags: NotRequired[dict[str, str]]
-    """Azure resource tags to apply."""
+    """Resource tags to apply."""
 
-    # === Resource Information ===
+    user_roles: NotRequired[list[str]]
+    """User's Azure roles for the subscription (e.g., ['Contributor', 'Owner'])."""
+
+    resource_group_exists: NotRequired[bool]
+    """Whether the resource group exists in Azure."""
+
+    resource_group_accessible: NotRequired[bool]
+    """Whether user has deployment permissions for the resource group."""
+
+    resource_group_checked: NotRequired[bool]
+    """Whether resource group existence has been checked."""
+
+    # ===== Resource Context (set by PreflightMiddleware tools) =====
+    resource_name: NotRequired[str]
+    """Target resource name."""
+
     resource_type: NotRequired[str]
-    """Primary Azure resource type."""
+    """Azure resource type (e.g., 'Microsoft.Storage/storageAccounts')."""
 
-    resource_names: NotRequired[list[str]]
-    """Names of resources being created/modified."""
+    resource_exists: NotRequired[bool]
+    """Whether the resource already exists."""
 
-    existing_resources: NotRequired[list[dict[str, Any]]]
-    """Existing Azure resources found during validation."""
+    intent: NotRequired[Intent]
+    """Deployment intent: deploy, update, delete, query."""
 
-    # === Template Information ===
+    # ===== Template Discovery (set by TemplateDiscoveryMiddleware) =====
     template_path: NotRequired[str]
-    """Absolute path to Bicep/ARM template file."""
-
-    template_info: NotRequired[TemplateInfoDict]
-    """Template metadata including parameters and resource types."""
-
-    parameters: NotRequired[dict[str, Any]]
-    """Template parameter values (merged: user-provided + defaults)."""
+    """Absolute path to Bicep template file."""
 
     template_discovery_status: NotRequired[str]
-    """Status of template discovery."""
+    """Status: 'success', 'failed', 'not_attempted'."""
 
     template_discovery_error: NotRequired[str]
-    """Error message if template discovery failed."""
+    """Error message if discovery failed."""
 
-    # === Query Results ===
-    query_results: NotRequired[list[dict[str, Any]]]
-    """Results from list_resources tool (list of Azure resources)."""
+    deployment_scope: NotRequired[DeploymentScope]
+    """Deployment scope from Bicep targetScope."""
 
-    last_query: NotRequired[dict[str, Any]]
-    """Metadata about the last query executed (resource_type, location, resource_group, count)."""
+    template_parameters: NotRequired[list[dict[str, Any]]]
+    """List of parameter definitions from template."""
 
-    selected_resource: NotRequired[dict[str, Any]]
-    """Resource details from get_resource tool."""
+    template_resources: NotRequired[list[dict[str, Any]]]
+    """List of resources defined in template."""
 
-    # === Validation Results ===
-    validation_results: NotRequired[ValidationResultsDict]
-    """Overall validation results."""
+    # ===== Deployment Planning (set by plan_deployment tool) =====
+    deployment_plan: NotRequired[dict[str, Any]]
+    """Complete deployment plan with ARM template, parameters, what-if results.
 
-    missing_parameters: NotRequired[list[str]]
-    """List of required parameters that are missing values."""
+    Structure:
+        - summary: str
+        - deployment_name: str
+        - template_path: str
+        - deployment_scope: DeploymentScope
+        - subscription_id: str
+        - resource_group: str | None
+        - location: str
+        - parameters: dict[str, Any]
+        - resources: list[dict[str, Any]]
+        - what_if_results: dict[str, Any]
+        - arm_template: dict[str, Any]
+        - created_at: str (ISO 8601)
+        - created_by: str
+    """
 
-    resource_validation: NotRequired[ResourceValidationDict]
-    """Resource naming and convention validation results."""
+    parameters: NotRequired[dict[str, Any]]
+    """User-provided + default parameters for deployment."""
 
-    # === Planning ===
-    deployment_plan: NotRequired[DeploymentPlanDict]
-    """Generated deployment plan."""
+    what_if_results: NotRequired[dict[str, Any]]
+    """Azure What-If analysis results showing predicted changes."""
 
-    what_if_results: NotRequired[WhatIfResultsDict]
-    """Azure what-if deployment preview results."""
-
-    # === Policy Compliance ===
+    # ===== Policy Compliance (set by AzurePolicyComplianceMiddleware) =====
     policy_check_status: NotRequired[str]
-    """Status of policy compliance check: completed, error, or skipped."""
+    """Status: 'completed', 'skipped', 'error'."""
 
     policy_violations: NotRequired[list[dict[str, Any]]]
-    """List of Azure Policy violations that would block deployment."""
+    """List of Deny policy violations that block deployment."""
 
     policy_warnings: NotRequired[list[dict[str, Any]]]
-    """List of Azure Policy warnings (Audit policies)."""
+    """List of Audit policy warnings (informational)."""
 
-    # === Execution ===
+    # ===== Deployment Execution (set by execute_deployment tool) =====
     deployment_status: NotRequired[DeploymentStatus]
     """Current deployment execution status."""
 
-    execution_start_time: NotRequired[datetime]
-    """Timestamp when deployment execution started."""
+    deployment_name: NotRequired[str]
+    """Azure deployment name."""
 
-    execution_end_time: NotRequired[datetime]
-    """Timestamp when deployment execution completed."""
+    deployment_id: NotRequired[str]
+    """Azure deployment resource ID."""
+
+    deployment_result: NotRequired[dict[str, Any]]
+    """Deployment operation result from Azure."""
 
     deployment_outputs: NotRequired[dict[str, Any]]
-    """ARM deployment outputs."""
+    """ARM template outputs after successful deployment."""
 
-    deployment_errors: NotRequired[list[str]]
-    """List of errors encountered during deployment."""
+    deployment_error: NotRequired[str]
+    """Error message if deployment failed."""
 
-    # === HITL Approval ===
+    deployed_resources: NotRequired[list[dict[str, Any]]]
+    """List of successfully deployed resources with IDs."""
+
+    # ===== HITL Approval (set by HumanInTheLoopMiddleware) =====
     approval_status: NotRequired[ApprovalStatus]
-    """Current HITL approval status."""
+    """Current approval status."""
 
-    approval_feedback: NotRequired[str]
-    """User feedback provided with approval decision."""
+    approval_decisions: NotRequired[list[dict[str, Any]]]
+    """History of approval decisions."""
 
-    approval_decisions: NotRequired[list[ApprovalDecisionDict]]
-    """History of approval decisions for tool calls."""
+    # ===== Validation (set by validation tools) =====
+    validation_results: NotRequired[dict[str, Any]]
+    """Overall validation results."""
 
-    approver_id: NotRequired[str]
-    """User who approved/rejected the deployment."""
+    validation_errors: NotRequired[list[str]]
+    """List of validation errors."""
 
-    # === Error Handling ===
-    last_error: NotRequired[ErrorInfoDict]
-    """Most recent error encountered."""
+    validation_warnings: NotRequired[list[str]]
+    """List of validation warnings."""
+
+    # ===== Query Results (set by query tools) =====
+    query_results: NotRequired[list[dict[str, Any]]]
+    """Results from list_resources or other query operations."""
+
+    last_query: NotRequired[str]
+    """Last executed query for debugging."""
+
+    resource_details: NotRequired[dict[str, Any]]
+    """Detailed resource information from get_resource."""
+
+    # ===== Usage Tracking (set by UsageTrackingMiddleware) =====
+    total_input_tokens: NotRequired[int]
+    """Total input tokens consumed."""
+
+    total_output_tokens: NotRequired[int]
+    """Total output tokens produced."""
+
+    total_tokens: NotRequired[int]
+    """Total tokens processed."""
+
+    total_calls: NotRequired[int]
+    """Total model calls made."""
+
+    # ===== User Context (set by CLI or API) =====
+    user_id: NotRequired[str]
+    """User identifier for tagging and audit."""
+
+    user_role: NotRequired[UserRole]
+    """User's role for authorization."""
+
+    session_id: NotRequired[str]
+    """Session identifier for tracking."""
+
+    # ===== Error Tracking =====
+    last_error: NotRequired[dict[str, Any]]
+    """Last error encountered with type, message, traceback."""
 
     retry_count: NotRequired[int]
     """Number of retry attempts for current operation."""
-
-    error_stack: NotRequired[list[ErrorInfoDict]]
-    """History of all errors in this session."""
-
-    # === Feature Flags ===
-    skip_validation: NotRequired[bool]
-    """Whether to skip certain validation steps."""
-
-    # === Conversation Management ===
-    conversation_turn: NotRequired[int]
-    """Current conversation turn number."""
-
-    session_start_time: NotRequired[datetime]
-    """When the conversation session started."""
-
-    # === User Context ===
-    user_role: NotRequired[UserRole]
-    """User's role: admin, approver, deployer, or viewer."""
-
-    user_preferences: NotRequired[dict[str, Any]]
-    """User preferences for UI and behavior."""
-
-    # === Telemetry ===
-    llm_calls: NotRequired[int]
-    """Count of LLM API calls in this session."""
-
-    tool_calls: NotRequired[int]
-    """Count of tool invocations in this session."""
-
-    api_calls: NotRequired[int]
-    """Count of Azure API calls in this session."""
