@@ -1,4 +1,4 @@
-"""Template discovery utilities for finding Bicep templates."""
+"""Template discovery utilities for finding Bicep templates and validating parameters."""
 
 from pathlib import Path
 from typing import Any
@@ -8,8 +8,6 @@ from arma.core.logging import get_logger
 logger = get_logger(__name__)
 
 # Base path for Bicep modules - go up to project root
-# From: src/arma/agent/tools/utils/template_finder.py
-# To:   bicep/modules/
 BICEP_MODULES_PATH = Path(__file__).parent.parent.parent.parent.parent.parent / "bicep" / "modules"
 
 
@@ -78,17 +76,11 @@ def get_template_parameters(template_path: str) -> list[dict[str, Any]]:
     try:
         with open(template_path) as f:
             for line in f:
-                # Look for parameter declarations
-                # Format: param <name> <type> = <default>
-                # or: param <name> <type>
                 line = line.strip()
                 if line.startswith("param "):
-                    # Remove 'param ' prefix
                     line_content = line[6:].strip()
 
-                    # Check if there's a default value (contains '=')
                     if "=" in line_content:
-                        # Split by '=' to get name/type and default
                         parts = line_content.split("=", 1)
                         name_type = parts[0].strip().split()
                         default_value = parts[1].strip().strip("'\"")
@@ -140,13 +132,11 @@ def get_template_scope(template_path: str) -> str:
         >>> print(scope)
         'resourceGroup'
     """
-    scope = "resourceGroup"  # Default scope
+    scope = "resourceGroup"
 
     try:
         with open(template_path) as f:
             for line in f:
-                # Look for targetScope directive
-                # Format: targetScope = 'scopeName'
                 line = line.strip()
                 if line.startswith("targetScope"):
                     # Extract scope value
@@ -163,9 +153,142 @@ def get_template_scope(template_path: str) -> str:
                             ]:
                                 scope = scope_value
                                 logger.debug(f"Template scope detected: {scope}")
-                    break  # targetScope must be first non-comment line
+                    break
 
     except Exception as e:
         logger.error(f"Error reading template scope from {template_path}: {e}")
 
     return scope
+
+
+def validate_template_parameters(
+    template_path: str, provided_parameters: dict[str, Any]
+) -> dict[str, Any]:
+    """Validate provided parameters against template parameter definitions.
+
+    Checks for:
+    - Missing required parameters
+    - Type mismatches between provided values and expected types
+    - Extra parameters not defined in template
+
+    Args:
+        template_path: Path to the Bicep template file.
+        provided_parameters: Dictionary of parameter names and values to validate.
+
+    Returns:
+        Dictionary with validation results:
+        {
+            'valid': bool,
+            'errors': list[str],
+            'warnings': list[str],
+            'missing_required': list[str],
+            'type_mismatches': list[dict],
+            'extra_parameters': list[str]
+        }
+
+    Examples:
+        >>> params = {'storageAccountName': 'mystore', 'sku': 123}
+        >>> result = validate_template_parameters('/path/to/main.bicep', params)
+        >>> print(result)
+        {
+            'valid': False,
+            'errors': ['Missing required parameter: location'],
+            'warnings': [],
+            'missing_required': ['location'],
+            'type_mismatches': [{'name': 'sku', 'expected': 'string', 'got': 'int'}],
+            'extra_parameters': []
+        }
+    """
+    result = {
+        "valid": True,
+        "errors": [],
+        "warnings": [],
+        "missing_required": [],
+        "type_mismatches": [],
+        "extra_parameters": [],
+    }
+
+    # Get template parameter definitions
+    template_params = get_template_parameters(template_path)
+    if not template_params:
+        logger.warning(f"No parameters found in template: {template_path}")
+        return result
+
+    # Create lookup dict for template params
+    template_params_dict = {p["name"]: p for p in template_params}
+
+    # Check for missing required parameters
+    for param in template_params:
+        if param.get("required", False) and param["name"] not in provided_parameters:
+            result["missing_required"].append(param["name"])
+            result["errors"].append(f"Missing required parameter: {param['name']}")
+            result["valid"] = False
+
+    # Check for type mismatches and extra parameters
+    for param_name, param_value in provided_parameters.items():
+        if param_name not in template_params_dict:
+            result["extra_parameters"].append(param_name)
+            result["warnings"].append(
+                f"Parameter '{param_name}' not defined in template (will be ignored)"
+            )
+            continue
+
+        template_param = template_params_dict[param_name]
+        expected_type = template_param["type"]
+        actual_type = _get_bicep_type(param_value)
+
+        if not _is_type_compatible(expected_type, actual_type, param_value):
+            mismatch = {
+                "name": param_name,
+                "expected": expected_type,
+                "got": actual_type,
+                "value": param_value,
+            }
+            result["type_mismatches"].append(mismatch)
+            result["errors"].append(
+                f"Type mismatch for '{param_name}': expected {expected_type}, got {actual_type} (value: {param_value})"
+            )
+            result["valid"] = False
+
+    return result
+
+
+def _get_bicep_type(value: Any) -> str:
+    """Map Python type to Bicep type string."""
+    if isinstance(value, bool):
+        return "bool"
+    elif isinstance(value, int):
+        return "int"
+    elif isinstance(value, str):
+        return "string"
+    elif isinstance(value, list):
+        return "array"
+    elif isinstance(value, dict):
+        return "object"
+    else:
+        return "unknown"
+
+
+def _is_type_compatible(expected: str, actual: str, value: Any) -> bool:
+    """Check if actual type is compatible with expected Bicep type.
+
+    Handles some common type conversions:
+    - int can be used for string (will be converted)
+    - string numbers can be used for int (if parseable)
+    """
+    if expected == actual:
+        return True
+
+    # Allow int to be passed as string (Bicep will convert)
+    if expected == "string" and actual == "int":
+        return True
+
+    # Allow string numbers to be passed as int (if valid)
+    if expected == "int" and actual == "string":
+        try:
+            int(value)
+            return True
+        except (ValueError, TypeError):
+            return False
+
+    return False

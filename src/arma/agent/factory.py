@@ -13,7 +13,6 @@ from langgraph.graph.state import CompiledStateGraph
 from arma.agent.checkpointer import CheckpointerFactory
 from arma.agent.llm.registry import get_llm
 from arma.agent.middleware import (
-    AzurePolicyComplianceMiddleware,
     ConversationSummaryMiddleware,
     PreflightMiddleware,
     TaggingMiddleware,
@@ -43,17 +42,13 @@ class ARMAAgentFactory:
 
     def __init__(
         self,
-        streaming: bool = False,
         checkpointer: BaseCheckpointSaver | None = None,
     ):
         """Initialize factory.
 
         Args:
-            streaming: Enable streaming responses from LLM
             checkpointer: Optional explicit checkpointer instance
         """
-        self.streaming = streaming
-
         # Use explicit checkpointer or default to memory
         if checkpointer:
             self.checkpointer = checkpointer
@@ -84,8 +79,8 @@ class ARMAAgentFactory:
         )
 
     def _build_llm(self):
-        """Build LLM with streaming support."""
-        return get_llm(streaming=self.streaming)
+        """Build LLM"""
+        return get_llm()
 
     def _build_tools(self) -> list:
         """Build tool list."""
@@ -132,13 +127,8 @@ class ARMAAgentFactory:
                 required_roles=["Contributor", "Owner"],
                 timeout_seconds=15,
             ),
-            AzurePolicyComplianceMiddleware(
-                check_on_execute=True,
-                block_on_violations=True,
-                fail_on_policy_error=False,
-                include_warnings=True,
-                skip_what_if=True,
-            ),
+            # Note: Policy compliance checking is handled by What-If analysis
+            # AzurePolicyComplianceMiddleware disabled to avoid duplicate checks
             TodoListMiddleware(
                 system_prompt="For complex Azure deployments, use write_todos to break down steps: analyze, plan, validate, execute"
             ),
@@ -162,13 +152,11 @@ class ARMAAgentFactory:
 
 
 def create_arma_agent(
-    streaming: bool = False,
     checkpointer: BaseCheckpointSaver | None = None,
 ) -> CompiledStateGraph:
     """Create an ARMA deployment agent.
 
     Args:
-        streaming: Enable streaming responses from LLM
         checkpointer: Optional explicit checkpointer instance
 
     Returns:
@@ -179,35 +167,13 @@ def create_arma_agent(
         >>> from arma.agent.checkpointer import CheckpointerFactory
         >>> from langchain_core.runnables import RunnableConfig
         >>>
-        >>> # Create non-streaming agent with default memory checkpointer
+        >>> # Create agent with default memory checkpointer
         >>> agent = create_arma_agent()
         >>> result = agent.invoke(state, config)
-        >>>
-        >>> # Create streaming agent with custom checkpointer
-        >>> checkpointer = CheckpointerFactory.create_memory()
-        >>> stream_agent = create_arma_agent(streaming=True, checkpointer=checkpointer)
-        >>> async for chunk in stream_agent.astream(state, config):
-        ...     print(chunk)
         >>>
         >>> # Create agent using factory method
         >>> checkpointer = CheckpointerFactory.create("memory")
         >>> agent = create_arma_agent(checkpointer=checkpointer)
     """
-    factory = ARMAAgentFactory(streaming=streaming, checkpointer=checkpointer)
+    factory = ARMAAgentFactory(checkpointer=checkpointer)
     return factory.create()
-
-
-def create_streaming_agent() -> CompiledStateGraph:
-    """Create an ARMA agent with streaming enabled.
-
-    Convenience function for creating a streaming agent.
-
-    Returns:
-        A configured streaming agent
-
-    Example:
-        >>> agent = create_streaming_agent()
-        >>> async for chunk in agent.astream(state, config):
-        ...     print(chunk)
-    """
-    return create_arma_agent(streaming=True)

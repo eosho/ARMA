@@ -1,8 +1,8 @@
 """Azure Policy Compliance middleware for deployment validation.
 
 Validates deployments against Azure Policy before execution to prevent violations.
-Wraps plan_deployment tool to check policy assignments, run What-If analysis,
-and block deployments that would violate Deny policies.
+Checks existing policy states and assignments, then blocks plan_deployment if
+vio lations would occur. This runs BEFORE What-If analysis to fail fast.
 """
 
 import subprocess
@@ -17,8 +17,6 @@ from arma.agent.state import ARMAAgentState
 from arma.agent.tools.utils.policy_helpers import (
     evaluate_policy_compliance,
     format_violation_message,
-    get_policy_assignments,
-    run_what_if_analysis,
 )
 from arma.core.logging import get_logger
 
@@ -40,7 +38,6 @@ class AzurePolicyComplianceMiddleware(AgentMiddleware):
         block_on_violations: bool = True,
         fail_on_policy_error: bool = False,
         include_warnings: bool = True,
-        skip_what_if: bool = False,
     ) -> None:
         """Initialize Azure Policy Compliance middleware.
 
@@ -49,14 +46,12 @@ class AzurePolicyComplianceMiddleware(AgentMiddleware):
             block_on_violations: Block if Deny policy violations found (default: True)
             fail_on_policy_error: Fail if policy check errors (default: False)
             include_warnings: Include Audit policy warnings (default: True)
-            skip_what_if: Skip What-If analysis (default: False)
         """
         super().__init__()
         self.check_on_execute = check_on_execute
         self.block_on_violations = block_on_violations
         self.fail_on_policy_error = fail_on_policy_error
         self.include_warnings = include_warnings
-        self.skip_what_if = skip_what_if
 
     @property
     def name(self) -> str:
@@ -103,44 +98,15 @@ class AzurePolicyComplianceMiddleware(AgentMiddleware):
         state = request.runtime.state
         subscription_id = state.get("subscription_id")
         resource_group = state.get("resource_group")
-        template_path = state.get("template_path")
-
-        tool_args = getattr(request, "tool_input", {})
-        parameters = tool_args.get("parameters", {})
 
         try:
-            logger.debug(f"Fetching policy assignments: {subscription_id}/{resource_group}")
-            policy_assignments = get_policy_assignments(subscription_id, resource_group)
-            logger.debug(f"Found {len(policy_assignments)} policy assignments")
-
-            what_if_results = None
-            if not self.skip_what_if:
-                logger.debug("Running What-If analysis")
-                what_if_results = run_what_if_analysis(
-                    subscription_id, resource_group, template_path, parameters
-                )
-                logger.debug("What-If analysis completed")
-
-            logger.debug("Evaluating policy compliance")
-
             resource_type = state.get("resource_type", "")
-            location = parameters.get("location") or state.get("location", "")
 
-            logger.debug(f"Evaluating: type={resource_type}, location={location}")
-            plan_for_eval = {
-                "template_path": template_path,
-                "parameters": parameters,
-                "resource_group": resource_group,
-                "subscription_id": subscription_id,
-                "resource_type": resource_type,
-                "location": location,
-            }
-
+            logger.debug(f"Evaluating policy compliance: {subscription_id}/{resource_group}")
             compliance_result = evaluate_policy_compliance(
-                policy_assignments=policy_assignments,
-                what_if_results=what_if_results,
+                subscription_id=subscription_id,
+                resource_group=resource_group,
                 resource_type=resource_type,
-                location=location,
                 include_warnings=self.include_warnings,
             )
 
@@ -163,7 +129,14 @@ class AzurePolicyComplianceMiddleware(AgentMiddleware):
                         **state_updates,
                         "messages": [
                             ToolMessage(
-                                content=f"Deployment blocked by Azure Policy:\n\n{error_message}",
+                                content=(
+                                    f"Deployment blocked by Azure Policy {error_message} "
+                                    "**Next Steps:** "
+                                    "1. Review the policy violations above "
+                                    "2. Update your deployment to comply with policies "
+                                    "3. Or request a policy exemption from your administrator "
+                                    "Inform the user tehy cannot proceed."
+                                ),
                                 tool_call_id=tool_call_id,
                             )
                         ],

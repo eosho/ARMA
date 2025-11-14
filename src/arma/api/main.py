@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from arma.__version__ import get_version
 from arma.api.models import HealthResponse
-from arma.api.routers import chat_router, stream_router
+from arma.api.routers import chat_router
 from arma.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -42,7 +42,6 @@ app.add_middleware(
 
 # Include routers
 app.include_router(chat_router)
-app.include_router(stream_router)
 
 
 @app.get("/", response_model=HealthResponse)

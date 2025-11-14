@@ -3,6 +3,7 @@
 import uuid
 
 from fastapi import APIRouter, HTTPException
+from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 
@@ -51,7 +52,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
         # Prepare input
         turn_input = {
-            "messages": [{"role": "user", "content": request.message}],
+            "messages": [HumanMessage(content=request.message)],
             "user_id": request.user_id,
         }
 

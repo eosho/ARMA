@@ -2,8 +2,7 @@
 
 This module provides utilities to check Azure Policy compliance before deployments:
 - Get policy assignments for a scope
-- Run What-If analysis
-- Evaluate policy compliance
+- Evaluate policy compliance against assignments
 - Format violation messages
 """
 
@@ -14,6 +13,11 @@ from typing import Any
 from arma.core.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+# =============================================================================
+# Azure Policy Client - API interactions
+# =============================================================================
 
 
 def get_policy_assignments(
@@ -68,94 +72,128 @@ def get_policy_assignments(
         return []
 
 
-def run_what_if_analysis(
+# =============================================================================
+# Policy Evaluator - Compliance checking logic
+# =============================================================================
+
+
+def trigger_policy_scan(
     subscription_id: str,
-    resource_group: str,
-    template_path: str,
-    parameters: dict[str, Any],
+    resource_group: str | None = None,
 ) -> dict[str, Any] | None:
-    """Run Azure What-If analysis for a deployment.
+    """Trigger on-demand policy compliance scan.
 
     Args:
         subscription_id: Azure subscription ID
-        resource_group: Resource group name
-        template_path: Path to ARM template
-        parameters: Deployment parameters
+        resource_group: Optional resource group name
 
     Returns:
-        What-If results or None if failed
+        Scan trigger response or None if failed
     """
     try:
-        # Write parameters to temporary file
-        import tempfile
+        scope = f"/subscriptions/{subscription_id}"
+        if resource_group:
+            scope = f"{scope}/resourceGroups/{resource_group}"
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as param_file:
-            json.dump({"parameters": parameters}, param_file)
-            param_file_path = param_file.name
+        cmd = [
+            "az",
+            "rest",
+            "--method",
+            "POST",
+            "--url",
+            f"https://management.azure.com{scope}/providers/Microsoft.PolicyInsights/policyStates/latest/triggerEvaluation?api-version=2019-10-01",
+        ]
 
-        try:
-            cmd = [
-                "az",
-                "deployment",
-                "group",
-                "what-if",
-                "--resource-group",
-                resource_group,
-                "--subscription",
-                subscription_id,
-                "--template-file",
-                template_path,
-                "--parameters",
-                f"@{param_file_path}",
-                "--no-pretty-print",
-                "-o",
-                "json",
-            ]
+        logger.debug(f"Triggering policy scan for scope: {scope}")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
 
-            logger.debug(f"Running What-If: {' '.join(cmd[:8])}...")  # Don't log full command
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-
-            if result.returncode == 0:
-                what_if_result = json.loads(result.stdout)
-                logger.debug("What-If analysis completed")
-                return what_if_result
-            else:
-                logger.warning(f"What-If analysis failed: {result.stderr[:200]}")
-                return None
-
-        finally:
-            # Clean up temp file
-            import contextlib
-            import os
-
-            with contextlib.suppress(OSError):
-                os.unlink(param_file_path)
+        if result.returncode == 0 or result.returncode == 202:
+            logger.debug("Policy scan triggered successfully")
+            return {"status": "triggered", "scope": scope}
+        else:
+            logger.warning(f"Failed to trigger policy scan: {result.stderr}")
+            return None
 
     except subprocess.TimeoutExpired:
-        logger.error("What-If analysis timed out")
-        return None
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse What-If results: {e}")
+        logger.error("Policy scan trigger timed out")
         return None
     except Exception as e:
-        logger.error(f"Error running What-If analysis: {e}")
+        logger.error(f"Error triggering policy scan: {e}")
         return None
+
+
+def get_policy_states(
+    subscription_id: str,
+    resource_group: str | None = None,
+    resource_type: str | None = None,
+) -> list[dict[str, Any]]:
+    """Get latest policy compliance states for a scope.
+
+    Args:
+        subscription_id: Azure subscription ID
+        resource_group: Optional resource group name
+        resource_type: Optional resource type filter
+
+    Returns:
+        List of policy state records
+    """
+    try:
+        cmd = [
+            "az",
+            "policy",
+            "state",
+            "list",
+            "--subscription",
+            subscription_id,
+            "-o",
+            "json",
+        ]
+
+        # Add resource group filter if provided
+        if resource_group:
+            cmd.extend(["--resource-group", resource_group])
+
+        # Add resource type filter if provided
+        if resource_type:
+            cmd.extend(["--filter", f"resourceType eq '{resource_type}'"])
+
+        logger.debug(f"Fetching policy states for subscription: {subscription_id}")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+
+        if result.returncode == 0:
+            states = json.loads(result.stdout)
+            logger.debug(f"Retrieved {len(states)} policy state records")
+            return states
+        else:
+            logger.error(f"Failed to get policy states: {result.stderr}")
+            return []
+
+    except subprocess.TimeoutExpired:
+        logger.error("Policy states query timed out")
+        return []
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse policy states JSON: {e}")
+        return []
+    except Exception as e:
+        logger.error(f"Error getting policy states: {e}")
+        return []
 
 
 def evaluate_policy_compliance(
-    policy_assignments: list[dict[str, Any]],
-    what_if_results: dict[str, Any] | None,
-    resource_type: str,
-    location: str,
+    subscription_id: str,
+    resource_group: str | None = None,
+    resource_type: str | None = None,
     include_warnings: bool = True,
 ) -> dict[str, Any]:
-    """Evaluate policy compliance for a deployment.
+    """Evaluate policy compliance using Azure Policy Insights API.
+
+    This triggers an on-demand scan and queries the latest policy states,
+    similar to the Azure/policy-compliance-scan GitHub Action.
 
     Args:
-        policy_assignments: Policy assignments from get_policy_assignments
-        what_if_results: Optional What-If results for improved accuracy
-        resource_type: Resource type being deployed
-        location: Target location
+        subscription_id: Azure subscription ID
+        resource_group: Optional resource group name
+        resource_type: Optional resource type filter
         include_warnings: Include Audit policy warnings
 
     Returns:
@@ -164,92 +202,65 @@ def evaluate_policy_compliance(
     violations = []
     warnings = []
 
-    logger.debug(
-        f"Evaluating compliance: {resource_type} in {location} with {len(policy_assignments)} policies"
-    )
-    for assignment in policy_assignments:
+    logger.debug(f"Evaluating compliance for subscription: {subscription_id}")
+
+    # Trigger on-demand scan (best effort - may not complete immediately)
+    trigger_result = trigger_policy_scan(subscription_id, resource_group)
+    if trigger_result:
+        logger.debug("On-demand policy scan triggered")
+
+    # Get latest policy states
+    policy_states = get_policy_states(subscription_id, resource_group, resource_type)
+
+    if not policy_states:
+        logger.warning("No policy states found - resources may not exist yet or scan not complete")
+        return {"violations": violations, "warnings": warnings}
+
+    # Process policy states
+    for state in policy_states:
         try:
-            display_name = assignment.get("displayName", "Unknown Policy")
-            policy_def_id = assignment.get("policyDefinitionId", "")
+            compliance_state = state.get("complianceState", "")
+            policy_name = state.get("policyDefinitionName", "Unknown Policy")
+            policy_assignment_name = state.get("policyAssignmentName", "")
+            resource_id = state.get("resourceId", "")
+            policy_definition_action = state.get("policyDefinitionAction", "")
 
-            enforcement_mode = assignment.get("enforcementMode", "Default")
-            if enforcement_mode == "DoNotEnforce":
-                logger.debug(f"Skipping policy '{display_name}' (DoNotEnforce)")
+            # Skip compliant resources
+            if compliance_state == "Compliant":
                 continue
-            if "allowed locations" in display_name.lower() or "location" in policy_def_id.lower():
-                policy_params = assignment.get("parameters", {})
-                allowed_locations_param = policy_params.get("listOfAllowedLocations", {})
-                allowed_locations = allowed_locations_param.get("value", [])
 
-                if (
-                    allowed_locations
-                    and location
-                    and location.lower() not in [loc.lower() for loc in allowed_locations]
-                ):
-                    violations.append(
-                        {
-                            "policy": display_name,
-                            "type": "location_restriction",
-                            "message": f"Location '{location}' is not in allowed locations: {', '.join(allowed_locations)}",
-                            "remediation": f"Use one of these locations: {', '.join(allowed_locations)}",
-                        }
-                    )
-                    logger.warning(
-                        f"Policy violation detected: {display_name} - location not allowed"
-                    )
+            # Build violation/warning record
+            record = {
+                "policy": policy_assignment_name or policy_name,
+                "resource": resource_id.split("/")[-1] if resource_id else "Unknown",
+                "type": policy_definition_action or "policy_violation",
+                "message": f"Resource is {compliance_state} with policy '{policy_assignment_name or policy_name}'",
+                "remediation": "Review policy requirements and update resource configuration",
+                "compliance_state": compliance_state,
+            }
 
-            if (
-                "require" in display_name.lower()
-                and "tag" in display_name.lower()
-                and include_warnings
-            ):
-                warnings.append(
-                    {
-                        "policy": display_name,
-                        "type": "required_tags",
-                        "message": f"Policy '{display_name}' may require specific tags",
-                        "remediation": "Review policy requirements and ensure all required tags are present",
-                    }
-                )
-
-            if (
-                "allowed" in display_name.lower()
-                and ("sku" in display_name.lower() or "size" in display_name.lower())
-                and include_warnings
-            ):
-                warnings.append(
-                    {
-                        "policy": display_name,
-                        "type": "sku_restriction",
-                        "message": f"Policy '{display_name}' may restrict SKUs or sizes",
-                        "remediation": "Review policy to ensure the SKU/size you're deploying is allowed",
-                    }
-                )
+            # Categorize based on policy effect and compliance state
+            if compliance_state == "NonCompliant":
+                if policy_definition_action.lower() in ["deny", "deployifnotexists"]:
+                    violations.append(record)
+                    logger.warning(f"Policy violation: {policy_assignment_name}")
+                elif include_warnings:
+                    warnings.append(record)
+                    logger.debug(f"Policy warning: {policy_assignment_name}")
+            elif compliance_state in ["Unknown", "Conflict"] and include_warnings:
+                warnings.append(record)
 
         except Exception as e:
-            logger.error(f"Error evaluating policy assignment: {e}")
+            logger.error(f"Error processing policy state: {e}")
             continue
 
-    if what_if_results:
-        changes = what_if_results.get("changes", [])
-        logger.debug(f"What-If detected {len(changes)} changes")
-
-        error = what_if_results.get("error", {})
-        if error:
-            error_message = error.get("message", "Unknown error")
-            if "policy" in error_message.lower():
-                violations.append(
-                    {
-                        "policy": "What-If Error",
-                        "type": "deployment_error",
-                        "message": f"Deployment validation failed: {error_message}",
-                        "remediation": "Review the error message and fix the issue before deploying",
-                    }
-                )
-
     logger.debug(f"Policy evaluation: {len(violations)} violations, {len(warnings)} warnings")
-
     return {"violations": violations, "warnings": warnings}
+
+
+# =============================================================================
+# Message Formatter - User-friendly output
+# =============================================================================
 
 
 def format_violation_message(

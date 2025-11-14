@@ -28,14 +28,6 @@ class ChatResponse(BaseModel):
     usage: dict | None = Field(default=None, description="Token usage information")
 
 
-class StreamRequest(BaseModel):
-    """Request model for streaming endpoint."""
-
-    message: str = Field(description="User message to send to the agent")
-    thread_id: str | None = Field(default=None, description="Thread ID for conversation continuity")
-    user_id: str = Field(default="api-user@example.com", description="User identifier for tracking")
-
-
 class HealthResponse(BaseModel):
     """Health check response."""
 

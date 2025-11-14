@@ -55,16 +55,13 @@ async def preview_what_if(
     """
     logger.debug(f"Running what-if: {subscription_id}/{resource_group}/{location}")
 
-    # Get deployment plan from state
     deployment_plan = runtime.state.get("deployment_plan")
 
-    # Validate deployment plan exists
     if not deployment_plan:
         error_msg = (
             "No deployment plan found in state. "
             "You must call plan_deployment first before running what-if analysis."
         )
-        logger.error(error_msg)
         return Command(
             update={
                 "messages": [
@@ -76,13 +73,11 @@ async def preview_what_if(
             }
         )
 
-    # Extract deployment details from plan
     arm_template = deployment_plan.get("arm_template")
     parameters = deployment_plan.get("parameters", {})
     deployment_scope = deployment_plan.get("deployment_scope", "resourceGroup")
 
     try:
-        # Run what-if analysis
         what_if_results = await run_what_if_deployment(
             resource_group=resource_group,
             location=location,
@@ -91,10 +86,8 @@ async def preview_what_if(
             deployment_scope=deployment_scope,
         )
 
-        # Check if what-if operation failed
         if what_if_results.get("status") == "failed":
             error_msg = what_if_results.get("error", "Unknown error")
-            logger.error(f"What-if analysis failed: {error_msg}")
             return Command(
                 update={
                     "messages": [
@@ -106,28 +99,23 @@ async def preview_what_if(
                 }
             )
 
-        # Analyze changes (filter out "Ignore" changes)
         all_changes = what_if_results.get("changes", [])
         significant_changes = [
             change for change in all_changes if change.get("changeType") != "Ignore"
         ]
 
-        # Count change types
         change_types = {}
         for change in significant_changes:
             change_type = change.get("changeType", "UNKNOWN")
             change_types[change_type] = change_types.get(change_type, 0) + 1
 
-        # Build detailed summary with resource information
         if significant_changes:
             summary_parts = [f"{count} {ctype}" for ctype, count in change_types.items()]
 
-            # Add resource details for better visibility
             resource_details = []
-            for change in significant_changes[:5]:  # Show first 5 changes
+            for change in significant_changes[:5]:
                 resource_id = change.get("resourceId", "unknown")
                 change_type = change.get("changeType", "UNKNOWN")
-                # Extract resource name from resource ID
                 resource_name = resource_id.split("/")[-1] if resource_id else "unknown"
                 resource_type = (
                     "/".join(resource_id.split("/")[-3:-1]) if resource_id else "unknown"
@@ -146,10 +134,8 @@ async def preview_what_if(
 
         logger.debug(summary)
 
-        # Update deployment plan with what-if results
         updated_plan = {**deployment_plan, "what_if_results": what_if_results}
 
-        # Return Command with state updates
         return Command(
             update={
                 "what_if_results": what_if_results,
@@ -165,7 +151,6 @@ async def preview_what_if(
 
     except Exception as e:
         error_msg = f"What-if analysis failed: {e}"
-        logger.error(error_msg)
         return Command(
             update={
                 "messages": [
@@ -178,7 +163,7 @@ async def preview_what_if(
         )
 
 
-@tool
+@tool("plan_deployment")
 async def plan_deployment(
     subscription_id: str,
     resource_group: str,
@@ -221,28 +206,6 @@ async def plan_deployment(
     """
     logger.debug(f"Planning deployment: {template_path}")
 
-    # GUARD: Check if template is available (discovery succeeded and template_path exists)
-    template_discovery_status = runtime.state.get("template_discovery_status")
-    state_template_path = runtime.state.get("template_path")
-
-    if template_discovery_status == "failed" or not state_template_path:
-        error_msg = runtime.state.get("template_discovery_error", "No template found")
-        logger.error(f"Cannot plan deployment - template not available: {error_msg}")
-        return Command(
-            update={
-                "messages": [
-                    ToolMessage(
-                        content=(
-                            f"ERROR: Cannot create deployment plan. {error_msg}. "
-                            f"Please inform the user that this resource type is not supported yet."
-                        ),
-                        tool_call_id=runtime.tool_call_id,
-                    )
-                ],
-            }
-        )
-
-    # Validate required context based on scope
     if deployment_scope == "resourceGroup":
         if not subscription_id:
             raise ValueError("Resource group deployment requires subscription_id parameter")
@@ -266,21 +229,16 @@ async def plan_deployment(
     )
 
     try:
-        # Step 1: Compile Bicep to ARM
         logger.debug("Compiling Bicep template to ARM")
         arm_template = await compile_bicep_to_arm(template_path)
 
-        # Step 2: Get template parameters with defaults
         logger.debug("Extracting template parameters")
         template_params = get_template_parameters(template_path)
 
-        # Build parameter map: {name: default_value}
         param_defaults = {
             p["name"]: p.get("default_value") for p in template_params if "default_value" in p
         }
 
-        # Step 3: Merge user parameters with defaults
-        # User parameters take precedence over defaults
         merged_parameters = {**param_defaults, **parameters}
 
         logger.debug(
@@ -289,17 +247,13 @@ async def plan_deployment(
         )
         logger.debug(f"Merged parameters: {merged_parameters}")
 
-        # Step 4: Extract resources from ARM template
         resources = arm_template.get("resources", [])
         resource_count = len(resources)
-
-        # Step 5: Generate human-readable summary
         summary = f"Deployment plan created for {resource_count} resource(s)"
 
-        # Build deployment plan
         deployment_plan = {
             "summary": summary,
-            "subscription_id": subscription_id,  # Preserve Azure context
+            "subscription_id": subscription_id,
             "resource_group": resource_group,
             "location": location,
             "resources": [
@@ -323,12 +277,10 @@ async def plan_deployment(
 
         logger.debug(f"Deployment plan created: {summary}")
 
-        # Return Command with state updates and ToolMessage
-        # Explicitly preserve subscription_id, resource_group, location in state
         return Command(
             update={
                 "deployment_plan": deployment_plan,
-                "subscription_id": subscription_id,  # Preserve in state
+                "subscription_id": subscription_id,
                 "resource_group": resource_group,
                 "location": location,
                 "parameters": merged_parameters,
@@ -343,7 +295,6 @@ async def plan_deployment(
 
     except FileNotFoundError as e:
         error_msg = f"Template file not found: {e}"
-        logger.error(error_msg)
         return Command(
             update={
                 "messages": [
@@ -356,7 +307,6 @@ async def plan_deployment(
         )
     except Exception as e:
         error_msg = f"Failed to create deployment plan: {e}"
-        logger.error(error_msg)
         return Command(
             update={
                 "messages": [

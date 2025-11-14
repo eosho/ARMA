@@ -206,11 +206,8 @@ AZURE_OPENAI_API_VERSION=2024-02-15-preview
 ### Run the Agent
 
 ```bash
-# Interactive CLI (streaming)
+# Interactive CLI
 uv run poe dev-agent
-
-# Non-streaming mode
-uv run poe dev-agent-no-stream
 ```
 
 **Example interaction:**

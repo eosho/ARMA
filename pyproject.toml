@@ -119,9 +119,8 @@ typecheck = "mypy src/"
 quality = ["format", "lint", "typecheck"]
 
 # Setup tasks
-setup = ["install-deps", "setup-env"]
+setup = ["install-deps"]
 install-deps = "uv sync"
-setup-env = { script = "scripts.setup:create_env_file" }
 
 # Build and deployment tasks
 build = "uv build"

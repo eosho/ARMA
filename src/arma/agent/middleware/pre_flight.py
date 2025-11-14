@@ -173,6 +173,7 @@ class PreflightMiddleware(AgentMiddleware):
 
         @tool(description="Check if resource group exists and validate access")
         async def check_resource_group(
+            subscription_id: str,
             resource_group: str,
             location: str,
             runtime: ToolRuntime,
@@ -180,6 +181,7 @@ class PreflightMiddleware(AgentMiddleware):
             """Check if resource group exists and validate access.
 
             Args:
+                subscription_id: Azure subscription GUID
                 resource_group: Resource group name
                 location: Azure region (used if creating new resource group)
                 runtime: Tool runtime context
@@ -187,17 +189,6 @@ class PreflightMiddleware(AgentMiddleware):
             Returns:
                 Command with state updates and resource group status
             """
-            subscription_id = runtime.state.get("subscription_id")
-            if not subscription_id:
-                message = "Subscription not validated. Call validate_azure_context first."
-                return Command(
-                    update={
-                        "messages": [
-                            ToolMessage(content=message, tool_call_id=runtime.tool_call_id)
-                        ]
-                    }
-                )
-
             logger.debug(f"Checking resource group: {resource_group}")
 
             try:

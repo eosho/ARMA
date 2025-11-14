@@ -121,11 +121,14 @@ async def run_what_if_deployment(
             os.unlink(params_file)
 
     except subprocess.CalledProcessError as e:
-        logger.error(f"What-if command failed: {e.stderr}")
-        # Parse error message for common issues
-        error_msg = e.stderr
-
-        return {"status": "failed", "changes": [], "error": f"{error_msg[:200]}"}
+        return {
+            "status": "failed",
+            "changes": [],
+            "error": e.stderr,
+        }
     except Exception as e:
-        logger.error(f"What-if operation failed: {e}")
-        return {"status": "failed", "changes": [], "error": f"What-if operation failed: {str(e)}"}
+        return {
+            "status": "failed",
+            "changes": [],
+            "error": f"What-if operation failed: {str(e)}",
+        }
